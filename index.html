@@ -476,8 +476,20 @@
     .stu-latest-gradebox {
         min-height:103px; width:100%; border-radius:10px;
         display:flex; align-items:center; justify-content:center;
-        color:#fff; overflow:hidden;
+        color:#fff; overflow:hidden; position:relative; isolation:isolate;
         margin-bottom:12px; padding:0 8px;
+    }
+    /* Fan rasmi: juda xira, faqat fonning o'ng chetida turadi.
+       Baho raqamining rangi va ravshanligiga ta'sir qilmaydi. */
+    .stu-latest-subject-art {
+        position:absolute; z-index:-1; right:-5px; bottom:-13px;
+        width:105px; height:94px; opacity:.13;
+        pointer-events:none; user-select:none;
+    }
+    .stu-latest-subject-art svg {
+        display:block; width:100%; height:100%;
+        fill:none; stroke:#fff; stroke-width:3.1;
+        stroke-linecap:round; stroke-linejoin:round;
     }
     .stu-latest-grade {
         text-align:center; font-family:Roboto,Arial,sans-serif;
@@ -1028,13 +1040,13 @@
   </div>
 </div>
 
-<div id="student-lesson-modal" class="lt-modal-overlay" style="display:none; z-index: 10001;">
-  <div class="lt-modal-box" style="max-width:550px; padding:0; overflow:hidden;">
-    <div style="display:flex; justify-content:space-between; align-items:center; padding:15px 20px; background:#f8fafc; border-bottom:1px solid #e2e8f0;">
-        <h3 style="margin:0; color:#1e293b;">Dars</h3>
-        <button class="tab-btn" style="background:transparent; color:#4361ee; font-weight:bold; padding:5px 10px; border:none; font-size:14px;" onclick="closeStudentLessonModal()">Yopish</button>
+<div id="student-lesson-modal" class="lt-modal-overlay" style="display:none; z-index:10001; align-items:stretch; justify-content:stretch; padding:0;">
+  <div class="lt-modal-box" style="max-width:none; width:100%; height:100%; max-height:100vh; margin:0; padding:0; border-radius:0; overflow-y:auto; box-shadow:none;">
+    <div style="position:sticky; top:0; z-index:5; display:flex; justify-content:center; align-items:center; min-height:64px; padding:10px 16px; border-bottom:0; background:#fff;">
+      <h3 style="margin:0; color:#111; font-size:20px; font-weight:400;">Dars</h3>
+      <button class="tab-btn" style="position:absolute; right:14px; top:50%; transform:translateY(-50%); background:transparent; color:#1685a2; font-weight:500; padding:8px 4px; border:none; font-size:16px;" onclick="closeStudentLessonModal()">Yopish</button>
     </div>
-    <div id="student-lesson-modal-body" style="padding:20px; max-height:80vh; overflow-y:auto;"></div>
+    <div id="student-lesson-modal-body" style="padding:0 20px 24px; max-height:none; min-height:calc(100vh - 64px); overflow-y:visible; background:#edf1f7;"></div>
   </div>
 </div>
 
@@ -4965,9 +4977,21 @@
                 const uniqueItems = items.filter((x,i,a) => a.findIndex(y => String(y.value) === String(x.value) && String(y.purpose || '') === String(x.purpose || '')) === i);
                 const gradeContent = uniqueItems.map(x => `<span class="stu-latest-grade">${hEsc(x.value)}</span>`).join(' ');
                 const purposes = [...new Set(uniqueItems.map(x => String(x.purpose || '').trim()).filter(Boolean))].join(', ');
+                const subject = String(item.subject || '').toLowerCase();
+                // eMaktab dars oynalaridagi fan rasmlariga o'xshash ingichka konturli rasmlar.
+                let subjectArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M15 20h90v68H15zM28 34h64M28 48h64M28 62h48M28 76h56"/></svg>`;
+                if (/geograf/.test(subject)) subjectArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M24 10h72v82H24zM36 24h48M36 38h48M36 52h48M36 66h48M36 80h32"/><path d="M17 17q-8 7 0 14M103 17q8 7 0 14"/></svg>`;
+                else if (/texnolog|mehnat/.test(subject)) subjectArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M12 18h45q10 0 10 10v61q-7-9-18-9H12zM108 18H73q-6 0-6 10v61q7-9 18-9h23zM23 34h30M23 48h30M23 62h24M78 34h18M78 48h18M78 62h18"/></svg>`;
+                else if (/ona tili|adabiyot|rus til|ingliz|tili/.test(subject)) subjectArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M12 15h42q10 0 10 10v63q-8-10-18-10H12zM108 15H76q-12 0-12 10v63q8-10 18-10h26zM24 31h29M24 44h29M24 57h24M77 31h19M77 44h19M77 57h19"/><path d="M73 83q7-19 25-29"/></svg>`;
+                else if (/biolog|tabiat/.test(subject)) subjectArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><circle cx="60" cy="50" r="8"/><ellipse cx="60" cy="50" rx="43" ry="17" transform="rotate(25 60 50)"/><ellipse cx="60" cy="50" rx="43" ry="17" transform="rotate(-25 60 50)"/><ellipse cx="60" cy="50" rx="17" ry="43"/><circle cx="60" cy="50" r="3"/></svg>`;
+                else if (/fizika/.test(subject)) subjectArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><circle cx="60" cy="50" r="8"/><ellipse cx="60" cy="50" rx="43" ry="17"/><ellipse cx="60" cy="50" rx="43" ry="17" transform="rotate(60 60 50)"/><ellipse cx="60" cy="50" rx="43" ry="17" transform="rotate(-60 60 50)"/></svg>`;
+                else if (/kimyo/.test(subject)) subjectArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M46 12h28M53 12v31L29 80q-4 8 7 8h48q11 0 7-8L67 43V12M39 68h42M48 55h24"/><circle cx="53" cy="76" r="3"/><circle cx="69" cy="80" r="3"/></svg>`;
+                else if (/tasviriy|san.?at|musiqa/.test(subject)) subjectArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M61 12C34 12 14 30 14 54c0 20 15 35 34 35 9 0 14-6 14-13 0-6-5-9-5-14 0-7 7-11 16-11h14c12 0 20-8 20-19 0-12-19-20-46-20z"/><circle cx="37" cy="39" r="5"/><circle cx="57" cy="28" r="5"/><circle cx="78" cy="35" r="5"/><path d="M83 70l23-24 6 6-23 24-10 4z"/></svg>`;
+                else if (/jismoniy|sport/.test(subject)) subjectArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><circle cx="60" cy="50" r="43"/><path d="M31 19l22 14 23-2 15-18M17 49l23 2 12 20-5 22M89 24L78 44l11 20 22 3M52 33l-12 18 12 20 26-7 12-20"/></svg>`;
+                const subjectArtHtml = `<span class="stu-latest-subject-art" aria-hidden="true">${subjectArt}</span>`;
                 return `<article class="stu-latest-card">
                     <div class="stu-latest-posted">${hEsc(postedText)}</div>
-                    <div class="stu-latest-gradebox" style="background:${gradeColorHex(item.value)};gap:8px;flex-wrap:wrap">${gradeContent}</div>
+                    <div class="stu-latest-gradebox" style="background:${gradeColorHex(item.value)};gap:8px;flex-wrap:wrap">${subjectArtHtml}${gradeContent}</div>
                     <div class="stu-latest-bottom"><b>${hEsc(item.subject)}</b>
                         <span class="stu-latest-purpose">${hEsc(purposes)}</span>
                         ${lessonDate ? `<span class="stu-latest-for-date">${hEsc(lessonDate)}</span>` : ''}
@@ -5309,7 +5333,9 @@
         const studentNameForDates = loggedStudent && loggedStudent.name;
         const studentGroupForDates = studentNameForDates ? getStudentGroupForSubject(cls, sub, studentNameForDates) : null;
         const dates = generateDates(cls, sub, q, studentGroupForDates && studentGroupForDates.index >= 0 ? studentGroupForDates.index : -1);
-        const dIdx = dates.findIndex(x => x.date === dateStr && x.instance === lessonIdx);
+        let dIdx = dates.findIndex(x => (x.iso === dateIso || x.date === dateStr) && Number(x.instance || 0) === Number(lessonIdx || 0));
+        // Sana formatida farq bo'lsa ham, ayni kundagi dars oynasi ochilsin.
+        if (dIdx === -1) dIdx = dates.findIndex(x => x.iso === dateIso || x.date === dateStr);
         if (dIdx === -1) return;
 
         const time = getShiftedLessonTime(cls, sub, dIdx);
@@ -5359,16 +5385,28 @@
 
         const dateLabel = dt.toLocaleDateString('uz-UZ', { day:'numeric', month:'long', year:'numeric', weekday:'long' });
 
+        // eMaktab dars oynasidagi kabi fan uchun xira konturli rasm.
+        const subjectLower = String(sub || '').toLowerCase();
+        let lessonArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M15 15h90v72H15zM28 30h64M28 44h64M28 58h48M28 72h56"/></svg>`;
+        if (/geograf/.test(subjectLower)) lessonArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M24 10h72v82H24zM36 24h48M36 38h48M36 52h48M36 66h48M36 80h32"/></svg>`;
+        else if (/texnolog|mehnat/.test(subjectLower)) lessonArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M12 18h45q10 0 10 10v61q-7-9-18-9H12zM108 18H73q-6 0-6 10v61q7-9 18-9h23zM23 34h30M23 48h30M23 62h24M78 34h18M78 48h18M78 62h18"/></svg>`;
+        else if (/ona tili|adabiyot|rus til|ingliz|tili/.test(subjectLower)) lessonArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M12 15h42q10 0 10 10v63q-8-10-18-10H12zM108 15H76q-12 0-12 10v63q8-10 18-10h26zM24 31h29M24 44h29M24 57h24M77 31h19M77 44h19M77 57h19"/><path d="M73 83q7-19 25-29"/></svg>`;
+        else if (/biolog|tabiat/.test(subjectLower)) lessonArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><circle cx="60" cy="50" r="8"/><ellipse cx="60" cy="50" rx="43" ry="17" transform="rotate(25 60 50)"/><ellipse cx="60" cy="50" rx="43" ry="17" transform="rotate(-25 60 50)"/><ellipse cx="60" cy="50" rx="17" ry="43"/></svg>`;
+        else if (/fizika/.test(subjectLower)) lessonArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><circle cx="60" cy="50" r="8"/><ellipse cx="60" cy="50" rx="43" ry="17"/><ellipse cx="60" cy="50" rx="43" ry="17" transform="rotate(60 60 50)"/><ellipse cx="60" cy="50" rx="43" ry="17" transform="rotate(-60 60 50)"/></svg>`;
+        else if (/kimyo/.test(subjectLower)) lessonArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M46 12h28M53 12v31L29 80q-4 8 7 8h48q11 0 7-8L67 43V12M39 68h42M48 55h24"/><circle cx="53" cy="76" r="3"/><circle cx="69" cy="80" r="3"/></svg>`;
+        else if (/tasviriy|san.?at|musiqa/.test(subjectLower)) lessonArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><path d="M61 12C34 12 14 30 14 54c0 20 15 35 34 35 9 0 14-6 14-13 0-6-5-9-5-14 0-7 7-11 16-11h14c12 0 20-8 20-19 0-12-19-20-46-20z"/><circle cx="37" cy="39" r="5"/><circle cx="57" cy="28" r="5"/><circle cx="78" cy="35" r="5"/><path d="M83 70l23-24 6 6-23 24-10 4z"/></svg>`;
+        else if (/jismoniy|sport/.test(subjectLower)) lessonArt = `<svg viewBox="0 0 120 100" aria-hidden="true"><circle cx="60" cy="50" r="43"/><path d="M31 19l22 14 23-2 15-18M17 49l23 2 12 20-5 22M89 24L78 44l11 20 22 3M52 33l-12 18 12 20 26-7 12-20"/></svg>`;
+
         const body = document.getElementById('student-lesson-modal-body');
         body.innerHTML = `
-            <div style="text-align:center; font-size:13px; color:#64748b; margin-bottom:15px; font-weight:600;">
-                ${hEsc(time.start)} - ${hEsc(time.end)}, ${hEsc(dateLabel)}
+            <div style="position:relative;overflow:hidden;background:#fff;margin:-20px -20px 14px;padding:24px 20px 18px;border-bottom:1px solid #d1d5db;min-height:155px;">
+                <div style="position:absolute;right:-7px;bottom:-14px;width:145px;height:120px;opacity:.13;pointer-events:none;">${lessonArt}</div>
+                <div style="position:relative;z-index:1;font-size:13px;color:#888;margin-bottom:10px;font-weight:500;">${hEsc(time.start)} - ${hEsc(time.end)}, ${hEsc(dateLabel)}</div>
+                <div style="position:relative;z-index:1;font-size:13px;color:#222;margin-bottom:26px;">${lessonIdx+1}-DARS</div>
+                <div style="position:relative;z-index:1;font-size:22px;font-weight:700;color:#111;margin-bottom:4px;">${hEsc(sub)}</div>
+                ${topic ? `<div style="position:relative;z-index:1;font-size:14px;color:#888;line-height:1.4;max-width:85%;white-space:pre-wrap;">${hEsc(topic)}</div>` : ''}
+                ${studentGroup && studentGroup.name ? `<div style="position:relative;z-index:1;font-size:13px;color:#0e7490;margin-top:7px;">👥 ${hEsc(studentGroup.name)}</div>` : ''}
             </div>
-            <div style="font-size:13px; font-weight:700; color:#4361ee; margin-bottom:5px;">${lessonIdx+1}-DARS</div>
-            <div style="font-size:22px; font-weight:800; color:#1e293b; margin-bottom:5px;">${hEsc(sub)}</div>
-            ${studentGroup && studentGroup.name ? `<div style="font-size:13px;color:#0e7490;margin-bottom:8px;">👥 ${hEsc(studentGroup.name)}</div>` : ''}
-            ${topic ? `<div style="margin-bottom:15px; padding-bottom:10px; border-bottom:1px solid #e2e8f0;"><div style="font-size:12px;font-weight:800;color:#1e293b;margin-bottom:5px;">📖 Mavzu</div><div style="font-size:14px;color:#475569;white-space:pre-wrap;">${hEsc(topic)}</div></div>` : '<div style="margin-bottom:15px; border-bottom:1px solid #e2e8f0; padding-bottom:10px;"></div>'}
-            
             <div style="font-size:12px; font-weight:800; color:#1e293b; background:#f1f5f9; padding:8px 12px; border-radius:6px; margin-bottom:10px;">Belgilar</div>
             <div style="margin-bottom:15px;">${marksHtml}</div>
 
