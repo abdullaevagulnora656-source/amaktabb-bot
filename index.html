@@ -4757,7 +4757,7 @@
                 // Imtihon va yakuniy natijalar boshqa baholar bilan bitta kartaga qo‘shilmaydi.
                 const purpose = String(item.purpose || '').trim();
                 const isFinalExam = ['Imtihon bahosi', 'Yakuniy natija'].includes(purpose);
-                const mergeKey = `${String(item.subject || '').trim().toLowerCase()}|${String(item.lessonDate || '')}|${String(item.quarter || '')}|${isFinalExam ? `final:${purpose}` : (item.lessonDate ? `lesson:${Number(item.lessonInstance || 0)}` : 'summary')}`;
+                const mergeKey = `${String(item.subject || '').trim().toLowerCase()}|${String(item.lessonDate || '')}|${String(item.quarter || '')}|${isFinalExam ? `final:${purpose}` : (item.lessonDate ? `lesson:${Number(item.lessonInstance || 0)}:${purpose.toLowerCase()}` : 'summary')}`;
                 if (!mergedDayItems.has(mergeKey)) mergedDayItems.set(mergeKey, []);
                 mergedDayItems.get(mergeKey).push(item);
             });
@@ -5311,10 +5311,16 @@
                     chips.push(`<span title="${hEsc(d.date+' · '+label+' — to‘liq ma’lumotni ko‘rish')}" onclick="event.stopPropagation();openStudentLessonModal('${jEsc(cls)}','${jEsc(subject.name)}','${jEsc(q)}','${jEsc(d.iso || '')}',${Number(d.instance)||0})" style="display:inline-block;margin:2px;padding:2px 5px;border-radius:3px;color:#fff;background:${gradeColorHex(typeValue)};font-weight:700;cursor:pointer;">${hEsc(typeValue)}</span>`);
                 });
             });
-            const avg = valid.length ? (valid.reduce((a,b)=>a+b,0)/valid.length).toFixed(2).replace(/0+$/,'').replace(/\.$/,'') : '—';
+            const avgValue = valid.length ? valid.reduce((a,b)=>a+b,0)/valid.length : null;
+            const avg = avgValue === null ? '—' : avgValue.toFixed(2);
+            const avgFraction = avgValue === null ? null : avgValue - Math.floor(avgValue);
+            // O'rtacha aynan .50 bo'lsa rang berilmaydi; .50 dan past/yuqori qiymat eng yaqin butun baho rangini oladi.
+            const avgIsHalf = avgFraction !== null && Math.abs(avgFraction - 0.5) < 0.000001;
+            const avgGradeColor = avgValue === null || avgIsHalf ? '' : gradeColorHex(String(Math.round(avgValue)));
+            const avgCell = avgValue === null ? '—' : `<span style="display:inline-block;min-width:42px;padding:3px 7px;border-radius:4px;${avgIsHalf ? 'color:inherit;background:transparent;' : `color:#fff;background:${avgGradeColor};`}font-weight:700;">${avg}</span>`;
             const qm = m.__quarter || '';
             const cell = qm ? `<span style="display:inline-block;min-width:23px;padding:3px 5px;border-radius:4px;color:#fff;background:${gradeColorHex(qm)};font-weight:700;">${hEsc(qm)}</span>` : '—';
-            html += `<tr style="border-top:1px solid #e5e7eb;"><td style="padding:9px 10px;text-align:left;">${hEsc(subject.name)}</td><td style="padding:6px 8px;text-align:left;">${chips.length ? chips.join('') : '<span style="color:#94a3b8;">Qo\'yilmagan</span>'}</td><td style="padding:8px;text-align:center;">${avg}</td><td style="padding:8px;text-align:center;">${cell}</td></tr>`;
+            html += `<tr style="border-top:1px solid #e5e7eb;"><td style="padding:9px 10px;text-align:left;">${hEsc(subject.name)}</td><td style="padding:6px 8px;text-align:left;">${chips.length ? chips.join('') : '<span style="color:#94a3b8;">Qo\'yilmagan</span>'}</td><td style="padding:8px;text-align:center;">${avgCell}</td><td style="padding:8px;text-align:center;">${cell}</td></tr>`;
         });
         html += `</tbody></table></div>`;
         return html;
