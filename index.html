@@ -947,13 +947,25 @@
                     </div>
                     <div style="display:flex; gap:15px; flex-wrap:wrap; margin-top:15px;">
                         <div style="flex:1; min-width:320px; background:white; padding:10px; border-radius:8px;">
-                            <h4 style="margin:0 0 8px 0; font-size:13px; color:var(--p);">Kataklarni qulflash</h4>
+                            <h4 style="margin:0 0 8px 0; font-size:13px; color:var(--p);">O‘quvchi kataklarini sanagacha qulflash</h4>
                             <select id="lock-cell-q-select" class="gi" style="width:120px; height:32px; margin-bottom:8px;" onchange="loadLockCellsList()"></select>
+                            <div style="display:flex;gap:6px;flex-wrap:wrap;margin:4px 0 8px;">
+                                <select id="lock-cell-student-select" class="gi" style="min-width:145px;height:34px;" onchange="loadLockCellsList()"><option value="__all">Barcha o‘quvchilar</option></select>
+                                <select id="lock-cell-group-select" class="gi" style="min-width:130px;height:34px;" onchange="loadLockCellsList()"><option value="-1">Barcha guruhlar</option></select>
+                            </div>
+                            <select id="lock-cell-subjects" class="gi" multiple size="4" style="width:100%;min-height:76px;margin-bottom:7px;" title="Bir yoki bir nechta fanni tanlang"></select>
+                            <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+                                <label style="font-size:11px;font-weight:700;">Qaysi sanagacha:</label>
+                                <input type="date" id="lock-cell-until-date" class="gi" style="height:32px;width:145px;">
+                                <button type="button" class="tab-btn" style="background:#ef4444;color:white;border:none;padding:6px 9px;" onclick="applyStudentCellLocksUntil()">🔒 Qulflash</button>
+                            </div>
+                            <div id="lock-cell-until-status" style="font-size:11px;color:#64748b;margin:6px 0;"></div>
                             <div id="lock-cells-students-list" style="max-height:180px; overflow-y:auto;"></div>
                         </div>
                         <div style="flex:1; min-width:300px; background:white; padding:10px; border-radius:8px;">
-                            <h4 style="margin:0 0 8px 0; font-size:13px; color:var(--p);">Sana ustozlari</h4>
+                            <h4 style="margin:0 0 8px 0; font-size:13px; color:var(--p);">Sana / guruh bo‘yicha qulflash</h4>
                             <select id="lock-q-select" class="gi" style="width:120px; height:32px; margin-bottom:8px;" onchange="loadLockDatesList()"></select>
+                            <select id="lock-date-group-select" class="gi" style="width:150px;height:32px;margin-bottom:8px;" onchange="loadLockDatesList()"><option value="-1">Barcha guruhlar</option></select>
                             <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:4px 0 10px;">
                                 <label style="font-size:12px;font-weight:700;">Qaysi sanagacha:</label>
                                 <input type="date" id="lock-until-date" class="gi" style="height:34px;width:150px;">
@@ -1133,6 +1145,18 @@
     function hEsc(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
     function jEsc(s) { return hEsc(s).replace(/'/g, "\\'"); }
     function lockTrue(v) { return v === true || v === 'true' || v === 1 || v === '1'; }
+    function isDateLocked(lockObj, sub, q, dIdx, groupIdx) {
+        const b = lockObj?.dates?.[sub]?.[q] || {};
+        if (Number(groupIdx) >= 0 && lockTrue(b.groups?.[String(Number(groupIdx))]?.[dIdx])) return true;
+        if (Number(groupIdx) < 0 && b.groups && Object.values(b.groups).some(g => lockTrue(g?.[dIdx]))) return true;
+        return lockTrue(b[dIdx]);
+    }
+    function isCellLocked(lockObj, studentKey, sub, q, dIdx, groupIdx) {
+        const b = lockObj?.cells?.[studentKey]?.[sub]?.[q] || {};
+        if (Number(groupIdx) >= 0 && lockTrue(b.groups?.[String(Number(groupIdx))]?.[dIdx])) return true;
+        if (Number(groupIdx) < 0 && b.groups && Object.values(b.groups).some(g => lockTrue(g?.[dIdx]))) return true;
+        return lockTrue(b[dIdx]);
+    }
     function lsGet(k, fb) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : fb; } catch(e) { return fb; } }
     function lsSet(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch(e){} }
 
@@ -3240,8 +3264,8 @@
                 const markKey = dk + (col.ltShort ? '__lt_' + col.ltShort : '');
                 const mObj = getMarks(qForDate, cls, col.l.name);
                 const val = mObj[entry.key]?.[markKey] || (col.ltShort ? mObj[entry.key]?.[dk] : '') || '';
-                const cellLocked = lockTrue(locks.cells?.[entry.key]?.[col.l.name]?.[qForDate]?.[col.dIdx]);
-                const dLocked = lockTrue(locks.dates?.[col.l.name]?.[qForDate]?.[col.dIdx]);
+                const cellLocked = isCellLocked(locks, entry.key, col.l.name, qForDate, col.dIdx, col.groupIdx);
+                const dLocked = isDateLocked(locks, col.l.name, qForDate, col.dIdx, col.groupIdx);
                 const st = col.grouped
                     ? getDateTeacherForLessonType(dtT,cls,col.l.name,qForDate,col.dIdx,col.groupIdx,col.ltShort)
                     : (dtT[`${cls}_${col.l.name}_${qForDate}_d_${col.dIdx}`] || '');
@@ -3323,8 +3347,8 @@
                 const mObj = getMarks(qForDate, cls, l.name);
                 const markKeyForColumn = dk ? dk + (ltShort ? '__lt_' + ltShort : '') : '';
                 const val = (markKeyForColumn && mObj[studentKey]) ? (mObj[studentKey][markKeyForColumn] || (ltShort ? mObj[studentKey][dk] : '') || '') : '';
-                const cellLocked = lockTrue(locks.cells?.[studentKey]?.[l.name]?.[qForDate]?.[dIdx]);
-                const dLocked = lockTrue(locks.dates?.[l.name]?.[qForDate]?.[dIdx]);
+                const cellLocked = isCellLocked(locks, studentKey, l.name, qForDate, dIdx, selectedGroupIdx);
+                const dLocked = isDateLocked(locks, l.name, qForDate, dIdx, selectedGroupIdx);
                 const st = selectedGroupIdx >= 0 ? getDateTeacherForLessonType(dtT,cls,l.name,qForDate,dIdx,selectedGroupIdx,ltShort) : (dtT[`${cls}_${l.name}_${qForDate}_d_${dIdx}`] || '');
                 const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, l.name, l, studentName);
                 const ro = !hasA || dLocked || cellLocked;
@@ -3380,7 +3404,7 @@
     // dars turlarini o'zgartirishga ruxsat berilmaydi.
     function canManageLessonTypesForColumn(cls, sub, q, dIdx, groupIdx) {
         const locks = (lsGet('lock_settings', {}) || {})[cls] || {};
-        if (lockTrue(locks.dates?.[sub]?.[q]?.[dIdx])) return false;
+        if (isDateLocked(locks, sub, q, dIdx, groupIdx)) return false;
 
         const gi = Number(groupIdx);
         const groups = lsGet(`groups_${cls}_${sub}`, []) || [];
@@ -3511,8 +3535,8 @@
                     if (col.ltShort) dk += '__lt_' + col.ltShort;
                     const val = marksAll[studentKey]?.[dk] || (col.ltShort ? (marksAll[studentKey]?.[dateKey(col.d)] || '') : '') || '';
                     if (val && !isNaN(val)) rowVals.push(parseFloat(val));
-                    const dLocked = lockTrue(locksAll.dates?.[sub]?.[activeQuarter]?.[col.dIdx]);
-                    const cLocked = lockTrue(locksAll.cells?.[studentKey]?.[sub]?.[activeQuarter]?.[col.dIdx]);
+                    const dLocked = isDateLocked(locksAll, sub, activeQuarter, col.dIdx, col.groupIdx);
+                    const cLocked = isCellLocked(locksAll, studentKey, sub, activeQuarter, col.dIdx, col.groupIdx);
                     const st = getDateTeacherForLessonType(dtTeachersAll,cls,sub,activeQuarter,col.dIdx,col.groupIdx,col.ltShort);
                     const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, entry.name);
                     const ro = !hasA || dLocked || cLocked;
@@ -3571,8 +3595,8 @@
                 if (col.ltShort) dk += '__lt_' + col.ltShort;
                 const val = marks[studentKey]?.[dk] || (col.ltShort ? (marks[studentKey]?.[dateKey(col.d)] || '') : '') || '';
                 if (val && !isNaN(val)) row.push(parseFloat(val));
-                const dLocked = lockTrue(locks.dates?.[sub]?.[activeQuarter]?.[col.dIdx]);
-                const cLocked = lockTrue(locks.cells?.[studentKey]?.[sub]?.[activeQuarter]?.[col.dIdx]);
+                const dLocked = isDateLocked(locks, sub, activeQuarter, col.dIdx, selectedGroupIdx);
+                const cLocked = isCellLocked(locks, studentKey, sub, activeQuarter, col.dIdx, selectedGroupIdx);
                 const st = selectedGroupIdx >= 0 ? getDateTeacherForLessonType(dtT,cls,sub,activeQuarter,col.dIdx,selectedGroupIdx,col.ltShort) : (dtT[`${cls}_${sub}_${activeQuarter}_d_${col.dIdx}`] || '');
                 const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, studentName);
                 const ro = !hasA || dLocked || cLocked;
@@ -3857,7 +3881,7 @@
             html += `<div style="margin:14px 0 10px;padding:11px 13px;background:#eef2ff;border-left:4px solid #4361ee;border-radius:8px;font-weight:800;color:#312e81;">${groupTitle}</div>`;
             dates.forEach((d, i) => {
                 const isToday = d.date === today;
-                const locked = lockTrue(locks.dates?.[sub]?.[activeQuarter]?.[i]);
+                const locked = isDateLocked(locks, sub, activeQuarter, i, index);
                 // Mavzu/uy vazifasiga ruxsat: fan, guruh, sana yoki
                 // sana+guruh+dars turi bo'yicha biriktirilgan ustozlarning
                 // istalgan biri shu yozuvni tahrirlashi mumkin.
@@ -4479,7 +4503,7 @@
         const subSel = document.getElementById('lock-sub-select');
         const oldSub = subSel.value;
         subSel.innerHTML = '';
-        classSubs.forEach(s => subSel.add(new Option(s.name, s.name)));
+        classSubs.forEach(x => subSel.add(new Option(x.name, x.name)));
         if (oldSub && Array.from(subSel.options).some(o => o.value === oldSub)) subSel.value = oldSub;
         ['lock-cell-q-select','lock-q-select'].forEach(id => {
             const qSel = document.getElementById(id); if (!qSel) return;
@@ -4488,104 +4512,178 @@
             if (oldQ && Array.from(qSel.options).some(o => o.value === oldQ)) qSel.value = oldQ;
             else if (Array.from(qSel.options).some(o => o.value === activeQuarter)) qSel.value = activeQuarter;
         });
+        const studentSel = document.getElementById('lock-cell-student-select');
+        if (studentSel) {
+            const old = studentSel.value;
+            studentSel.innerHTML = '<option value="__all">Barcha o‘quvchilar</option>';
+            getSortedStudentEntries(cls, true).forEach(st => studentSel.add(new Option(st.name, st.key)));
+            if (old && Array.from(studentSel.options).some(o => o.value === old)) studentSel.value = old;
+        }
+        const multi = document.getElementById('lock-cell-subjects');
+        if (multi) {
+            const old = Array.from(multi.selectedOptions).map(o => o.value);
+            multi.innerHTML = '';
+            classSubs.forEach(x => multi.add(new Option(x.name, x.name)));
+            Array.from(multi.options).forEach(o => { if (old.includes(o.value) || o.value === subSel.value) o.selected = true; });
+        }
+        loadLockGroupSelects();
         loadLockSettingsData();
     };
+    window.loadLockGroupSelects = function() {
+        const cls = document.getElementById('lock-class-select')?.value;
+        const sub = document.getElementById('lock-sub-select')?.value;
+        if (!cls || !sub) return;
+        const groups = lsGet(`groups_${cls}_${sub}`, []) || [];
+        ['lock-date-group-select','lock-cell-group-select'].forEach(id => {
+            const el = document.getElementById(id); if (!el) return;
+            const old = el.value;
+            el.innerHTML = '<option value="-1">Barcha guruhlar</option>';
+            groups.forEach((g,i) => el.add(new Option(g.name || `Guruh ${i+1}`, String(i))));
+            if (old && Array.from(el.options).some(o => o.value === old)) el.value = old;
+        });
+    };
     window.loadLockSettingsData = function() {
-        loadLockCellsList(); loadLockDatesList();
+        loadLockGroupSelects(); loadLockCellsList(); loadLockDatesList();
     };
     window.loadLockCellsList = function() {
         const cls = document.getElementById('lock-class-select').value;
         const sub = document.getElementById('lock-sub-select').value;
         const q = document.getElementById('lock-cell-q-select').value;
+        const gi = Number(document.getElementById('lock-cell-group-select')?.value ?? -1);
+        const studentFilter = document.getElementById('lock-cell-student-select')?.value || '__all';
         const cont = document.getElementById('lock-cells-students-list');
         if (!cls || !sub) { cont.innerHTML = ''; return; }
-        const students = getSortedStudentEntries(cls, true);
-        const locks = lsGet('lock_settings', {})[cls]?.cells || {};
-        const dates = generateDates(cls, sub, q);
+        const students = getSortedStudentEntries(cls, true).filter(st => studentFilter === '__all' || st.key === studentFilter);
+        const locks = lsGet('lock_settings', {})[cls] || {};
+        const dates = generateDates(cls, sub, q, gi);
         let html = '';
         students.forEach(st => {
             let chks = '';
-            dates.forEach((d, dIdx) => {
-                const isL = lockTrue(locks[st.key]?.[sub]?.[q]?.[dIdx]);
-                chks += `<label style="font-size:10px; margin-right:4px;"><input type="checkbox" ${isL?'checked':''} onchange="toggleLockCell('${jEsc(cls)}','${jEsc(st.key)}','${jEsc(sub)}','${jEsc(q)}',${dIdx},this.checked)">${hEsc(d.date)}</label>`;
+            dates.forEach((d, idx) => {
+                const on = isCellLocked(locks, st.key, sub, q, idx, gi);
+                chks += `<label style="font-size:10px;margin-right:4px;"><input type="checkbox" ${on?'checked':''} onchange="toggleLockCell('${jEsc(cls)}','${jEsc(st.key)}','${jEsc(sub)}','${jEsc(q)}',${idx},this.checked,${gi})">${hEsc(d.date)}</label>`;
             });
-            html += `<div style="font-size:11px; margin-bottom:4px; border-bottom:1px solid #f1f5f9; padding-bottom:3px;"><b>${hEsc(st.name)}</b>: ${chks}</div>`;
+            html += `<div style="font-size:11px;margin-bottom:4px;border-bottom:1px solid #f1f5f9;padding-bottom:3px;"><b>${hEsc(st.name)}</b>: ${chks}</div>`;
         });
         cont.innerHTML = html;
     };
-    window.toggleLockCell = function(cls, studentKey, sub, q, dIdx, locked) {
-        const allLocks = lsGet('lock_settings', {});
-        if (!allLocks[cls]) allLocks[cls] = {};
-        if (!allLocks[cls].cells) allLocks[cls].cells = {};
-        if (!allLocks[cls].cells[studentKey]) allLocks[cls].cells[studentKey] = {};
-        if (!allLocks[cls].cells[studentKey][sub]) allLocks[cls].cells[studentKey][sub] = {};
-        if (!allLocks[cls].cells[studentKey][sub][q]) allLocks[cls].cells[studentKey][sub][q] = {};
-        if (locked) allLocks[cls].cells[studentKey][sub][q][dIdx] = true;
-        else delete allLocks[cls].cells[studentKey][sub][q][dIdx];
-        lsSet('lock_settings', allLocks);
-        window.syncLockSettingsToFirebase(allLocks);
-        render();
+    window.toggleLockCell = function(cls, studentKey, sub, q, idx, locked, gi=-1) {
+        const all = lsGet('lock_settings', {});
+        if (!all[cls]) all[cls] = {};
+        if (!all[cls].cells) all[cls].cells = {};
+        if (!all[cls].cells[studentKey]) all[cls].cells[studentKey] = {};
+        if (!all[cls].cells[studentKey][sub]) all[cls].cells[studentKey][sub] = {};
+        if (!all[cls].cells[studentKey][sub][q]) all[cls].cells[studentKey][sub][q] = {};
+        const b = all[cls].cells[studentKey][sub][q];
+        if (Number(gi) >= 0) {
+            if (!b.groups) b.groups = {};
+            if (!b.groups[String(gi)]) b.groups[String(gi)] = {};
+            if (locked) b.groups[String(gi)][idx] = true; else delete b.groups[String(gi)][idx];
+        } else {
+            if (locked) b[idx] = true; else delete b[idx];
+        }
+        all.__ts = Date.now(); lsSet('lock_settings', all);
+        window.syncLockSettingsToFirebase(all); loadLockCellsList(); render(); showSaved();
+    };
+    window.applyStudentCellLocksUntil = function() {
+        const cls = document.getElementById('lock-class-select')?.value;
+        const q = document.getElementById('lock-cell-q-select')?.value;
+        const until = document.getElementById('lock-cell-until-date')?.value;
+        const studentKey = document.getElementById('lock-cell-student-select')?.value || '__all';
+        const gi = Number(document.getElementById('lock-cell-group-select')?.value ?? -1);
+        const subjects = Array.from(document.getElementById('lock-cell-subjects')?.selectedOptions || []).map(o => o.value);
+        if (!cls || !q || !until || !subjects.length) return alert('Chorak, fan(lar) va oxirgi sanani tanlang.');
+        const all = lsGet('lock_settings', {}) || {};
+        if (!all[cls]) all[cls] = {};
+        if (!all[cls].cells) all[cls].cells = {};
+        const students = getSortedStudentEntries(cls, true).filter(st => studentKey === '__all' || st.key === studentKey);
+        let count = 0;
+        subjects.forEach(sub => generateDates(cls, sub, q, gi).forEach((d, idx) => {
+            if (!d.iso || d.iso > until) return;
+            students.forEach(st => {
+                if (!all[cls].cells[st.key]) all[cls].cells[st.key] = {};
+                if (!all[cls].cells[st.key][sub]) all[cls].cells[st.key][sub] = {};
+                if (!all[cls].cells[st.key][sub][q]) all[cls].cells[st.key][sub][q] = {};
+                const b = all[cls].cells[st.key][sub][q];
+                if (gi >= 0) {
+                    if (!b.groups) b.groups = {};
+                    if (!b.groups[String(gi)]) b.groups[String(gi)] = {};
+                    b.groups[String(gi)][idx] = true;
+                } else b[idx] = true;
+                count++;
+            });
+        }));
+        all.__ts = Date.now(); lsSet('lock_settings', all);
+        if (typeof window.syncLockSettingsToFirebase === 'function') window.syncLockSettingsToFirebase(all);
+        const status = document.getElementById('lock-cell-until-status');
+        if (status) status.textContent = `✅ ${count} ta o‘quvchi katagi ${until} gacha qulflandi.`;
+        loadLockCellsList(); render(); showSaved();
     };
     window.applyLockUntilDate = function() {
         const cls = document.getElementById('lock-class-select')?.value;
         const sub = document.getElementById('lock-sub-select')?.value;
         const q = document.getElementById('lock-q-select')?.value;
         const until = document.getElementById('lock-until-date')?.value;
+        const gi = Number(document.getElementById('lock-date-group-select')?.value ?? -1);
         if (!cls || !sub || !q || !until) return alert('Sinf, fan, chorak va oxirgi sanani tanlang.');
-        const dates = generateDates(cls, sub, q);
-        const selectedIndex = dates.findIndex(d => d.iso === until);
-        if (selectedIndex < 0) return alert('Tanlangan sana ushbu fan jadvalida topilmadi. Sana jadvalidagi kunlardan birini tanlang.');
-        const allLocks = lsGet('lock_settings', {}) || {};
-        if (!allLocks[cls]) allLocks[cls] = {};
-        if (!allLocks[cls].dates) allLocks[cls].dates = {};
-        if (!allLocks[cls].dates[sub]) allLocks[cls].dates[sub] = {};
-        if (!allLocks[cls].dates[sub][q]) allLocks[cls].dates[sub][q] = {};
-        let count = 0;
+        const dates = generateDates(cls, sub, q, gi);
+        if (!dates.some(d => d.iso === until)) return alert('Tanlangan sana ushbu fan/guruh jadvalida topilmadi.');
+        const all = lsGet('lock_settings', {}) || {};
+        if (!all[cls]) all[cls] = {};
+        if (!all[cls].dates) all[cls].dates = {};
+        if (!all[cls].dates[sub]) all[cls].dates[sub] = {};
+        if (!all[cls].dates[sub][q]) all[cls].dates[sub][q] = {};
+        const b = all[cls].dates[sub][q]; let count = 0;
         dates.forEach((d, idx) => {
-            if (d.iso && d.iso <= until) {
-                allLocks[cls].dates[sub][q][idx] = true;
-                count++;
-            }
+            if (!d.iso || d.iso > until) return;
+            if (gi >= 0) {
+                if (!b.groups) b.groups = {};
+                if (!b.groups[String(gi)]) b.groups[String(gi)] = {};
+                b.groups[String(gi)][idx] = true;
+            } else b[idx] = true;
+            count++;
         });
-        allLocks.__ts = Date.now();
-        lsSet('lock_settings', allLocks);
-        if (typeof window.syncLockSettingsToFirebase === 'function') window.syncLockSettingsToFirebase(allLocks);
+        all.__ts = Date.now(); lsSet('lock_settings', all);
+        if (typeof window.syncLockSettingsToFirebase === 'function') window.syncLockSettingsToFirebase(all);
         const status = document.getElementById('lock-until-status');
-        if (status) status.textContent = `✅ ${count} ta sana ${until} gacha qulflandi.`;
-        loadLockDatesList();
-        render();
-        showSaved();
+        if (status) status.textContent = `✅ ${count} ta sana ${until} gacha qulflandi${gi >= 0 ? ' (tanlangan guruh)' : ''}.`;
+        loadLockDatesList(); render(); showSaved();
     };
-
     window.loadLockDatesList = function() {
         const cls = document.getElementById('lock-class-select').value;
         const sub = document.getElementById('lock-sub-select').value;
         const q = document.getElementById('lock-q-select').value;
+        const gi = Number(document.getElementById('lock-date-group-select')?.value ?? -1);
         const cont = document.getElementById('lock-dates-list');
         if (!cls || !sub) { cont.innerHTML = ''; return; }
-        const dates = generateDates(cls, sub, q);
-        const locks = lsGet('lock_settings', {})[cls]?.dates || {};
+        const dates = generateDates(cls, sub, q, gi);
+        const locks = lsGet('lock_settings', {})[cls] || {};
         let html = '';
-        dates.forEach((d, dIdx) => {
-            const isL = lockTrue(locks[sub]?.[q]?.[dIdx]);
-            html += `<div style="display:flex; gap:6px; align-items:center; margin-bottom:4px; font-size:11px;">
-                <span style="font-weight:bold; width:60px;">${hEsc(d.date)}:</span>
-                <label><input type="checkbox" ${isL?'checked':''} onchange="toggleLockDate('${jEsc(cls)}','${jEsc(sub)}','${jEsc(q)}',${dIdx},this.checked)">🔒</label>
+        dates.forEach((d, idx) => {
+            const on = isDateLocked(locks, sub, q, idx, gi);
+            html += `<div style="display:flex;gap:6px;align-items:center;margin-bottom:4px;font-size:11px;">
+                <span style="font-weight:bold;width:60px;">${hEsc(d.date)}:</span>
+                <label><input type="checkbox" ${on?'checked':''} onchange="toggleLockDate('${jEsc(cls)}','${jEsc(sub)}','${jEsc(q)}',${idx},this.checked,${gi})">🔒</label>
             </div>`;
         });
         cont.innerHTML = html;
     };
-    window.toggleLockDate = function(cls, sub, q, dIdx, locked) {
-        const allLocks = lsGet('lock_settings', {});
-        if (!allLocks[cls]) allLocks[cls] = {};
-        if (!allLocks[cls].dates) allLocks[cls].dates = {};
-        if (!allLocks[cls].dates[sub]) allLocks[cls].dates[sub] = {};
-        if (!allLocks[cls].dates[sub][q]) allLocks[cls].dates[sub][q] = {};
-        if (locked) allLocks[cls].dates[sub][q][dIdx] = true;
-        else delete allLocks[cls].dates[sub][q][dIdx];
-        lsSet('lock_settings', allLocks);
-        window.syncLockSettingsToFirebase(allLocks);
-        render();
+    window.toggleLockDate = function(cls, sub, q, idx, locked, gi=-1) {
+        const all = lsGet('lock_settings', {});
+        if (!all[cls]) all[cls] = {};
+        if (!all[cls].dates) all[cls].dates = {};
+        if (!all[cls].dates[sub]) all[cls].dates[sub] = {};
+        if (!all[cls].dates[sub][q]) all[cls].dates[sub][q] = {};
+        const b = all[cls].dates[sub][q];
+        if (Number(gi) >= 0) {
+            if (!b.groups) b.groups = {};
+            if (!b.groups[String(gi)]) b.groups[String(gi)] = {};
+            if (locked) b.groups[String(gi)][idx] = true; else delete b.groups[String(gi)][idx];
+        } else {
+            if (locked) b[idx] = true; else delete b[idx];
+        }
+        all.__ts = Date.now(); lsSet('lock_settings', all);
+        window.syncLockSettingsToFirebase(all); loadLockDatesList(); render(); showSaved();
     };
     window.renderStudentQuarterList = function() {
         const sel = document.getElementById('quarter-class-select');
