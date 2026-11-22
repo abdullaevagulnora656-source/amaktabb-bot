@@ -958,6 +958,7 @@
                                 <label style="font-size:11px;font-weight:700;">Qaysi sanagacha:</label>
                                 <input type="date" id="lock-cell-until-date" class="gi" style="height:32px;width:145px;">
                                 <button type="button" class="tab-btn" style="background:#ef4444;color:white;border:none;padding:6px 9px;" onclick="applyStudentCellLocksUntil()">🔒 Qulflash</button>
+                                <button type="button" class="tab-btn" style="background:#16a34a;color:white;border:none;padding:6px 9px;" onclick="unlockStudentCellLocksUntil()">🔓 Ochish</button>
                             </div>
                             <div id="lock-cell-until-status" style="font-size:11px;color:#64748b;margin:6px 0;"></div>
                             <div id="lock-cells-students-list" style="max-height:180px; overflow-y:auto;"></div>
@@ -969,7 +970,8 @@
                             <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:4px 0 10px;">
                                 <label style="font-size:12px;font-weight:700;">Qaysi sanagacha:</label>
                                 <input type="date" id="lock-until-date" class="gi" style="height:34px;width:150px;">
-                                <button type="button" class="tab-btn" style="background:#ef4444;color:white;border:none;padding:7px 11px;" onclick="applyLockUntilDate()">🔒 Bajarish</button>
+                                <button type="button" class="tab-btn" style="background:#ef4444;color:white;border:none;padding:7px 11px;" onclick="applyLockUntilDate()">🔒 Qulflash</button>
+                                <button type="button" class="tab-btn" style="background:#16a34a;color:white;border:none;padding:7px 11px;" onclick="unlockLockUntilDate()">🔓 Ochish</button>
                             </div>
                             <div id="lock-until-status" style="font-size:11px;color:#64748b;margin-bottom:7px;"></div>
                             <div id="lock-dates-list" style="max-height:160px; overflow-y:auto;"></div>
@@ -4619,6 +4621,37 @@
         if (status) status.textContent = `✅ ${count} ta o‘quvchi katagi ${until} gacha qulflandi.`;
         loadLockCellsList(); render(); showSaved();
     };
+    window.unlockStudentCellLocksUntil = function() {
+        const cls = document.getElementById('lock-class-select')?.value;
+        const q = document.getElementById('lock-cell-q-select')?.value;
+        const until = document.getElementById('lock-cell-until-date')?.value;
+        const studentKey = document.getElementById('lock-cell-student-select')?.value || '__all';
+        const gi = Number(document.getElementById('lock-cell-group-select')?.value ?? -1);
+        const subjects = Array.from(document.getElementById('lock-cell-subjects')?.selectedOptions || []).map(o => o.value);
+        if (!cls || !q || !until || !subjects.length) return alert('Chorak, fan(lar) va oxirgi sanani tanlang.');
+        const all = lsGet('lock_settings', {}) || {};
+        const students = getSortedStudentEntries(cls, true).filter(st => studentKey === '__all' || st.key === studentKey);
+        let count = 0;
+        subjects.forEach(sub => generateDates(cls, sub, q, gi).forEach((d, idx) => {
+            if (!d.iso || d.iso > until) return;
+            students.forEach(st => {
+                const b = all[cls]?.cells?.[st.key]?.[sub]?.[q];
+                if (!b) return;
+                if (gi >= 0) {
+                    if (b.groups?.[String(gi)]) delete b.groups[String(gi)][idx];
+                } else {
+                    delete b[idx];
+                    if (b.groups) Object.values(b.groups).forEach(g => { if (g) delete g[idx]; });
+                }
+                count++;
+            });
+        }));
+        all.__ts = Date.now(); lsSet('lock_settings', all);
+        if (typeof window.syncLockSettingsToFirebase === 'function') window.syncLockSettingsToFirebase(all);
+        const status = document.getElementById('lock-cell-until-status');
+        if (status) status.textContent = `🔓 ${count} ta o‘quvchi katagi ${until} gacha ochildi.`;
+        loadLockCellsList(); render(); showSaved();
+    };
     window.applyLockUntilDate = function() {
         const cls = document.getElementById('lock-class-select')?.value;
         const sub = document.getElementById('lock-sub-select')?.value;
@@ -4647,6 +4680,34 @@
         if (typeof window.syncLockSettingsToFirebase === 'function') window.syncLockSettingsToFirebase(all);
         const status = document.getElementById('lock-until-status');
         if (status) status.textContent = `✅ ${count} ta sana ${until} gacha qulflandi${gi >= 0 ? ' (tanlangan guruh)' : ''}.`;
+        loadLockDatesList(); render(); showSaved();
+    };
+    window.unlockLockUntilDate = function() {
+        const cls = document.getElementById('lock-class-select')?.value;
+        const sub = document.getElementById('lock-sub-select')?.value;
+        const q = document.getElementById('lock-q-select')?.value;
+        const until = document.getElementById('lock-until-date')?.value;
+        const gi = Number(document.getElementById('lock-date-group-select')?.value ?? -1);
+        if (!cls || !sub || !q || !until) return alert('Sinf, fan, chorak va oxirgi sanani tanlang.');
+        const dates = generateDates(cls, sub, q, gi);
+        if (!dates.some(d => d.iso === until)) return alert('Tanlangan sana ushbu fan/guruh jadvalida topilmadi.');
+        const all = lsGet('lock_settings', {}) || {};
+        const b = all[cls]?.dates?.[sub]?.[q];
+        let count = 0;
+        if (b) dates.forEach((d, idx) => {
+            if (!d.iso || d.iso > until) return;
+            if (gi >= 0) {
+                if (b.groups?.[String(gi)]) delete b.groups[String(gi)][idx];
+            } else {
+                delete b[idx];
+                if (b.groups) Object.values(b.groups).forEach(g => { if (g) delete g[idx]; });
+            }
+            count++;
+        });
+        all.__ts = Date.now(); lsSet('lock_settings', all);
+        if (typeof window.syncLockSettingsToFirebase === 'function') window.syncLockSettingsToFirebase(all);
+        const status = document.getElementById('lock-until-status');
+        if (status) status.textContent = `🔓 ${count} ta sana ${until} gacha ochildi${gi >= 0 ? ' (tanlangan guruh)' : ''}.`;
         loadLockDatesList(); render(); showSaved();
     };
     window.loadLockDatesList = function() {
