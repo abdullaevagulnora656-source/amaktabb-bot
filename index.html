@@ -2963,7 +2963,7 @@
 
     function setView(v) { currentView = v; localStorage.setItem('last_view', v); document.getElementById('weekly-controls').style.display = (v==='weekly') ? 'flex' : 'none'; render(); }
     function setWeeklyLayout(l) { weeklyLayout = l; localStorage.setItem('weekly_layout', l); document.getElementById('layout-vertical').classList.toggle('active-layout', l==='vertical'); document.getElementById('layout-horizontal').classList.toggle('active-layout', l==='horizontal'); render(); }
-    function setQ(q) { activeQuarter = q; localStorage.setItem('last_Q', q); render(); if (loggedStudent) renderStudentView(); }
+    function setQ(q) { activeQuarter = q; window.__manualQuarterSelection = true; localStorage.setItem('last_Q', q); render(); if (loggedStudent) renderStudentView(); }
     function onClassChange() { updateSubjectsList(); updateGroupSelect(); updateClassTeacherDisplay(document.getElementById('c-select').value); updateClassShiftDisplay(document.getElementById('c-select').value); updateSubjectTeachersDisplay(document.getElementById('c-select').value); updateTeacherInfoPanel(document.getElementById('c-select').value); render(); }
     function onSubjectChange() { localStorage.setItem('last_sub', document.getElementById('s-select').value); updateGroupSelect(); updateSubjectTeachersDisplay(document.getElementById('c-select').value); updateTeacherInfoPanel(document.getElementById('c-select').value); render(); }
     function onGroupChange() { updateSubjectTeachersDisplay(document.getElementById('c-select').value); updateTeacherInfoPanel(document.getElementById('c-select').value); render(); }
@@ -6026,7 +6026,9 @@
                 break;
             }
         }
-        if (currentQ && currentQ !== activeQuarter) {
+        // Foydalanuvchi chorak tugmasini bosgan bo‘lsa, shu sahifa davomida
+        // avtomatik tanlov uning tanlovini ustidan yozmasin.
+        if (!window.__manualQuarterSelection && currentQ && currentQ !== activeQuarter) {
             activeQuarter = currentQ;
             localStorage.setItem('last_Q', activeQuarter);
         }
