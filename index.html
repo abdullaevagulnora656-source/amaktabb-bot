@@ -967,6 +967,8 @@
                             <h4 style="margin:0 0 8px 0; font-size:13px; color:var(--p);">Sana / guruh bo‘yicha qulflash</h4>
                             <select id="lock-q-select" class="gi" style="width:120px; height:32px; margin-bottom:8px;" onchange="loadLockDatesList()"></select>
                             <select id="lock-date-group-select" class="gi" style="width:150px;height:32px;margin-bottom:8px;" onchange="loadLockDatesList()"><option value="-1">Barcha guruhlar</option></select>
+                            <label style="display:block;font-size:11px;font-weight:700;margin:2px 0 5px;">Qulflanadigan fanlar (bir nechta tanlash mumkin):</label>
+                            <select id="lock-date-subjects" class="gi" multiple size="4" style="width:100%;min-height:76px;margin-bottom:7px;" title="Bir yoki bir nechta fanni tanlang"></select>
                             <div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;margin:4px 0 10px;">
                                 <label style="font-size:12px;font-weight:700;">Qaysi sanagacha:</label>
                                 <input type="date" id="lock-until-date" class="gi" style="height:34px;width:150px;">
@@ -4528,6 +4530,13 @@
             classSubs.forEach(x => multi.add(new Option(x.name, x.name)));
             Array.from(multi.options).forEach(o => { if (old.includes(o.value) || o.value === subSel.value) o.selected = true; });
         }
+        const dateMulti = document.getElementById('lock-date-subjects');
+        if (dateMulti) {
+            const old = Array.from(dateMulti.selectedOptions).map(o => o.value);
+            dateMulti.innerHTML = '';
+            classSubs.forEach(x => dateMulti.add(new Option(x.name, x.name)));
+            Array.from(dateMulti.options).forEach(o => { o.selected = old.includes(o.value) || o.value === subSel.value; });
+        }
         loadLockGroupSelects();
         loadLockSettingsData();
     };
@@ -4654,60 +4663,64 @@
     };
     window.applyLockUntilDate = function() {
         const cls = document.getElementById('lock-class-select')?.value;
-        const sub = document.getElementById('lock-sub-select')?.value;
         const q = document.getElementById('lock-q-select')?.value;
         const until = document.getElementById('lock-until-date')?.value;
         const gi = Number(document.getElementById('lock-date-group-select')?.value ?? -1);
-        if (!cls || !sub || !q || !until) return alert('Sinf, fan, chorak va oxirgi sanani tanlang.');
-        const dates = generateDates(cls, sub, q, gi);
-        if (!dates.some(d => d.iso === until)) return alert('Tanlangan sana ushbu fan/guruh jadvalida topilmadi.');
+        const subjects = Array.from(document.getElementById('lock-date-subjects')?.selectedOptions || []).map(o => o.value);
+        if (!cls || !q || !until || !subjects.length) return alert('Sinf, chorak, fan(lar) va oxirgi sanani tanlang.');
         const all = lsGet('lock_settings', {}) || {};
         if (!all[cls]) all[cls] = {};
         if (!all[cls].dates) all[cls].dates = {};
-        if (!all[cls].dates[sub]) all[cls].dates[sub] = {};
-        if (!all[cls].dates[sub][q]) all[cls].dates[sub][q] = {};
-        const b = all[cls].dates[sub][q]; let count = 0;
-        dates.forEach((d, idx) => {
-            if (!d.iso || d.iso > until) return;
-            if (gi >= 0) {
-                if (!b.groups) b.groups = {};
-                if (!b.groups[String(gi)]) b.groups[String(gi)] = {};
-                b.groups[String(gi)][idx] = true;
-            } else b[idx] = true;
-            count++;
+        let count = 0;
+        subjects.forEach(sub => {
+            const dates = generateDates(cls, sub, q, gi);
+            if (!all[cls].dates[sub]) all[cls].dates[sub] = {};
+            if (!all[cls].dates[sub][q]) all[cls].dates[sub][q] = {};
+            const b = all[cls].dates[sub][q];
+            dates.forEach((d, idx) => {
+                if (!d.iso || d.iso > until) return;
+                if (gi >= 0) {
+                    if (!b.groups) b.groups = {};
+                    if (!b.groups[String(gi)]) b.groups[String(gi)] = {};
+                    b.groups[String(gi)][idx] = true;
+                } else b[idx] = true;
+                count++;
+            });
         });
         all.__ts = Date.now(); lsSet('lock_settings', all);
         if (typeof window.syncLockSettingsToFirebase === 'function') window.syncLockSettingsToFirebase(all);
         const status = document.getElementById('lock-until-status');
-        if (status) status.textContent = `✅ ${count} ta sana ${until} gacha qulflandi${gi >= 0 ? ' (tanlangan guruh)' : ''}.`;
+        if (status) status.textContent = `✅ ${subjects.length} ta fan bo‘yicha ${count} ta sana ${until} gacha qulflandi${gi >= 0 ? ' (tanlangan guruh)' : ''}.`;
         loadLockDatesList(); render(); showSaved();
     };
     window.unlockLockUntilDate = function() {
         const cls = document.getElementById('lock-class-select')?.value;
-        const sub = document.getElementById('lock-sub-select')?.value;
         const q = document.getElementById('lock-q-select')?.value;
         const until = document.getElementById('lock-until-date')?.value;
         const gi = Number(document.getElementById('lock-date-group-select')?.value ?? -1);
-        if (!cls || !sub || !q || !until) return alert('Sinf, fan, chorak va oxirgi sanani tanlang.');
-        const dates = generateDates(cls, sub, q, gi);
-        if (!dates.some(d => d.iso === until)) return alert('Tanlangan sana ushbu fan/guruh jadvalida topilmadi.');
+        const subjects = Array.from(document.getElementById('lock-date-subjects')?.selectedOptions || []).map(o => o.value);
+        if (!cls || !q || !until || !subjects.length) return alert('Sinf, chorak, fan(lar) va oxirgi sanani tanlang.');
         const all = lsGet('lock_settings', {}) || {};
-        const b = all[cls]?.dates?.[sub]?.[q];
         let count = 0;
-        if (b) dates.forEach((d, idx) => {
-            if (!d.iso || d.iso > until) return;
-            if (gi >= 0) {
-                if (b.groups?.[String(gi)]) delete b.groups[String(gi)][idx];
-            } else {
-                delete b[idx];
-                if (b.groups) Object.values(b.groups).forEach(g => { if (g) delete g[idx]; });
-            }
-            count++;
+        subjects.forEach(sub => {
+            const dates = generateDates(cls, sub, q, gi);
+            const b = all[cls]?.dates?.[sub]?.[q];
+            if (!b) return;
+            dates.forEach((d, idx) => {
+                if (!d.iso || d.iso > until) return;
+                if (gi >= 0) {
+                    if (b.groups?.[String(gi)]) delete b.groups[String(gi)][idx];
+                } else {
+                    delete b[idx];
+                    if (b.groups) Object.values(b.groups).forEach(g => { if (g) delete g[idx]; });
+                }
+                count++;
+            });
         });
         all.__ts = Date.now(); lsSet('lock_settings', all);
         if (typeof window.syncLockSettingsToFirebase === 'function') window.syncLockSettingsToFirebase(all);
         const status = document.getElementById('lock-until-status');
-        if (status) status.textContent = `🔓 ${count} ta sana ${until} gacha ochildi${gi >= 0 ? ' (tanlangan guruh)' : ''}.`;
+        if (status) status.textContent = `🔓 ${subjects.length} ta fan bo‘yicha ${count} ta sana ${until} gacha ochildi${gi >= 0 ? ' (tanlangan guruh)' : ''}.`;
         loadLockDatesList(); render(); showSaved();
     };
     window.loadLockDatesList = function() {
