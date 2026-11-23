@@ -187,6 +187,12 @@
         if (typeof window.renderTeacherSchedule === 'function') window.renderTeacherSchedule();
         if (typeof window.renderClassShiftsUI === 'function') window.renderClassShiftsUI();
     });
+    onValue(ref(db, 'grade_audit/'), (snap) => {
+        const data = snap.val() || {};
+        setLS('grade_audit', data);
+        if (typeof window.renderGradeAudit === 'function') window.renderGradeAudit();
+    });
+
     onValue(ref(db, 'admins_list/'), (snap) => {
         const data = snap.val();
         if (data) { setLS('admins_list', data); fireRefresh(); }
@@ -347,6 +353,13 @@
     .ts-group-btn:hover { background: #0e7490; color: white; border-color: #0e7490; transform: translateY(-1px); }
     @keyframes tsFlashCol { 0% { background: #fef3c7; box-shadow: inset 0 0 0 2px #f59e0b; } 60% { background: #fde68a; box-shadow: inset 0 0 0 2px #f59e0b; } 100% { background: transparent; box-shadow: none; } }
     .ts-flash-col { animation: tsFlashCol 1.5s ease-out; }
+    .teacher-audit-menu-btn { background:linear-gradient(135deg,#7c3aed,#4f46e5)!important;color:#fff!important;border:2px solid #c4b5fd!important;box-shadow:0 4px 12px rgba(79,70,229,.25);font-weight:800!important; }
+    .teacher-audit-menu-btn:hover { background:linear-gradient(135deg,#6d28d9,#4338ca)!important; }
+    .teacher-audit-overlay { display:none;position:fixed;inset:0;z-index:12000;background:rgba(15,23,42,.72);padding:12px;overflow:auto; }
+    .teacher-audit-box { max-width:1250px;margin:18px auto;background:#fff;border-radius:16px;padding:16px;box-shadow:0 15px 50px rgba(0,0,0,.25); }
+    .teacher-audit-head { display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:2px solid #ede9fe;padding-bottom:12px;margin-bottom:12px; }
+    .teacher-audit-table-wrap { overflow:auto;max-height:65vh;border:1px solid #e2e8f0;border-radius:9px; }
+    @media(max-width:640px){.teacher-audit-box{padding:10px;margin:4px auto}.teacher-audit-overlay{padding:6px}}
 
     .stu-card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 3px 14px rgba(0,0,0,.05); margin-bottom: 14px; }
     .stu-collapsible { cursor: pointer; }
@@ -594,6 +607,7 @@
         <button class="tab-btn" style="background:#ec4899; color:white; border:none;" onclick="openGroupsModal()">👥 Guruhlar</button>
         <button class="tab-btn" style="background:#0ea5e9; color:white; border:none;" onclick="openTeacherSchedule()">🗓 Ustoz jadvali</button>
         <button class="tab-btn" style="background:#0284c7; color:white; border:none;" onclick="openSettingsModal()">⚙️ Sozlama</button>
+        <button class="tab-btn teacher-audit-menu-btn" onclick="openTeacherGradeAudit()">🕒 Baholar tarixi</button>
         <input type="date" id="date-pick" class="gi" style="width:150px; height:38px" onchange="render()">
         <select id="c-select" class="gi" style="width:110px; height:38px" onchange="onClassChange()"></select>
         <select id="s-select" class="gi" style="width:160px; height:38px" onchange="onSubjectChange()"></select>
@@ -609,6 +623,29 @@
     </div>
 
     <div id="table-area" style="overflow-x: auto; border: 1px solid #ddd; border-radius: 10px;"></div>
+</div>
+
+<div id="teacher-grade-audit-modal" class="teacher-audit-overlay" role="dialog" aria-modal="true" aria-label="Mening baholarim tarixi">
+    <div class="teacher-audit-box">
+        <div class="teacher-audit-head">
+            <div>
+                <h2 style="margin:0;color:#4f46e5;font-size:20px;">🕒 Mening baholarim tarixi</h2>
+                <div id="teacher-audit-owner" style="font-size:12px;color:#64748b;margin-top:4px;"></div>
+            </div>
+            <button class="tab-btn" style="background:#fee2e2;color:#b91c1c;border:0;" onclick="closeTeacherGradeAudit()">✖ Yopish</button>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">
+            <button class="tab-btn" style="background:#0f766e;color:white;border:0;" onclick="teacherAuditExport('exportGradeAuditCSV')">📊 CSV</button>
+            <button class="tab-btn" style="background:#166534;color:white;border:0;" onclick="teacherAuditExport('exportGradeAuditExcel')">🟢 Excel</button>
+            <button class="tab-btn" style="background:#1d4ed8;color:white;border:0;" onclick="teacherAuditExport('exportGradeAuditWord')">🔵 Word</button>
+            <button class="tab-btn" style="background:#b91c1c;color:white;border:0;" onclick="teacherAuditExport('exportGradeAuditPDF')">🔴 PDF</button>
+            <button class="tab-btn" style="background:#9333ea;color:white;border:0;" onclick="teacherAuditExport('exportGradeAuditPPTX')">🟣 PowerPoint</button>
+        </div>
+        <div id="teacher-grade-audit-info" style="font-size:13px;color:#475569;margin-bottom:9px;"></div>
+        <div id="teacher-grade-audit-results" class="teacher-audit-table-wrap">
+            <div style="padding:18px;text-align:center;color:#64748b;">Baholar tarixi yuklanmoqda...</div>
+        </div>
+    </div>
 </div>
 
 <div id="student-content" class="main" style="display:none">
@@ -734,6 +771,33 @@
                     </div>
                 </div>
 
+                <div style="background:#eff6ff;border:1px solid #93c5fd;padding:15px;border-radius:10px;margin-bottom:20px;">
+                    <h3 style="margin-top:0;color:#1d4ed8;">🕒 Baholar tarixi va audit hisoboti</h3>
+                    <p style="font-size:12px;color:#475569;margin-top:0;">Baho qo‘yilgan, o‘zgartirilgan yoki o‘chirilgan vaqt; o‘quvchi, ustoz, sinf, fan, guruh va dars turi bo‘yicha.</p>
+                    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(155px,1fr));gap:8px;margin-bottom:10px;">
+                        <select id="audit-teacher" class="gi" style="width:100%;height:38px;"><option value="">Barcha o‘qituvchilar</option></select>
+                        <select id="audit-class" class="gi" style="width:100%;height:38px;"><option value="">Barcha sinflar</option></select>
+                        <select id="audit-subject" class="gi" style="width:100%;height:38px;"><option value="">Barcha fanlar</option></select>
+                        <select id="audit-group" class="gi" style="width:100%;height:38px;"><option value="">Barcha guruhlar</option></select>
+                        <select id="audit-student" class="gi" style="width:100%;height:38px;"><option value="">Barcha o‘quvchilar</option></select>
+                        <select id="audit-action" class="gi" style="width:100%;height:38px;"><option value="">Barcha amallar</option><option value="qo‘yildi">Qo‘yildi</option><option value="o‘zgartirildi">O‘zgartirildi</option><option value="o‘chirildi">O‘chirildi</option></select>
+                        <select id="audit-lesson-type" class="gi" style="width:100%;height:38px;"><option value="">Barcha dars turlari</option></select>
+                        <label style="font-size:12px;color:#475569;">Boshlanish sanasi<input id="audit-from" type="date" class="gi" style="width:100%;height:36px;"></label>
+                        <label style="font-size:12px;color:#475569;">Tugash sanasi<input id="audit-to" type="date" class="gi" style="width:100%;height:36px;"></label>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+                        <button class="tab-btn" style="background:#2563eb;color:white;border:0;" onclick="renderGradeAudit()">🔎 Tanlanganlar bo‘yicha qidirish</button>
+                        <button class="tab-btn" style="background:#64748b;color:white;border:0;" onclick="resetGradeAuditFilters()">↺ Tozalash</button>
+                        <button class="tab-btn" style="background:#0f766e;color:white;border:0;" onclick="exportGradeAuditCSV()">📊 CSV</button>
+                        <button class="tab-btn" style="background:#166534;color:white;border:0;" onclick="exportGradeAuditExcel()">🟢 Excel</button>
+                        <button class="tab-btn" style="background:#1d4ed8;color:white;border:0;" onclick="exportGradeAuditWord()">🔵 Word</button>
+                        <button class="tab-btn" style="background:#b91c1c;color:white;border:0;" onclick="exportGradeAuditPDF()">🔴 PDF</button>
+                        <button class="tab-btn" style="background:#9333ea;color:white;border:0;" onclick="exportGradeAuditPPTX()">🟣 PowerPoint</button>
+                    </div>
+                    <div id="audit-history-info" style="font-size:12px;color:#475569;margin-bottom:8px;">Eski saqlangan audit yozuvlari ham Firebase’dan yuklanadi.</div>
+                    <div id="grade-audit-results" style="max-height:480px;overflow:auto;background:white;border:1px solid #dbeafe;border-radius:8px;padding:8px;"><div style="padding:12px;background:#eff6ff;color:#1e3a8a;font-weight:800;border-radius:6px;margin-bottom:8px;">Jadval ustun nomlari yuqorida ko‘k sarlavhada doim ko‘rinib turadi. Yon tomonga surib qolgan ustunlarni ham ko‘rishingiz mumkin.</div></div>
+                </div>
+
                 <div style="background:#e0f2fe; border:1px solid #7dd3fc; padding:15px; border-radius:10px; margin-bottom:20px;">
                     <h3 style="margin-top:0; color:#075985;">🔑 O'quvchi akkauntlari</h3>
                     <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:center;">
@@ -792,6 +856,8 @@
                     </div>
                     <div id="mark-codes-list" style="background:white;border:1px solid #fed7aa;border-radius:6px;padding:10px;max-height:260px;overflow-y:auto;"></div>
                 </div>
+
+
 
                 <div style="background:#f3e8ff; border:1px solid #d8b4fe; padding:15px; border-radius:10px; margin-bottom:20px;">
                     <h3 style="margin-top:0; color:#6b21a8;">👑 Adminlar boshqaruvi</h3>
@@ -1234,6 +1300,7 @@
     window.syncRoomsToFirebase         = (data)         => fbWrite('rooms/', data);
     window.syncClassShiftsToFirebase   = (data)         => fbWrite('class_shifts/', data);
     window.syncAdminsListToFirebase    = (data)         => fbWrite('admins_list/', data);
+    window.syncGradeAuditToFirebase    = (data)         => fbWrite('grade_audit/', data);
 
     const DEFAULT_BELL_MORNING = [
         { start: '08:00', end: '08:45' }, { start: '08:50', end: '09:35' },
@@ -1425,7 +1492,48 @@
     function markKey(q, cls, sub) { return `marks_${q}_${cls}_${sub}`; }
     function getMarksByKey(key) { if (window.__marksCache && window.__marksCache[key]) return window.__marksCache[key]; return lsGet(key, {}); }
     function getMarks(q, cls, sub) { return getMarksByKey(markKey(q, cls, sub)); }
+    function gradeAuditValue(v) { return v == null ? '' : String(v); }
+    function writeGradeAudit(q, cls, sub, before, after) {
+        const log = lsGet('grade_audit', {}) || {};
+        const ctx = window.__gradeAuditContext || {};
+        const now = Date.now();
+        const studentNames = getStudentsListObj()[cls] || [];
+        const keyToName = {};
+        studentNames.forEach(n => { keyToName[getStudentKeyByName(cls, n)] = n; });
+        const allStudents = new Set([...Object.keys(before || {}), ...Object.keys(after || {})]);
+        allStudents.forEach(sk => {
+            const a = before?.[sk] || {}, b = after?.[sk] || {};
+            const fields = new Set([...Object.keys(a), ...Object.keys(b)]);
+            fields.forEach(field => {
+                if (field === '__meta' || field.startsWith('__')) return;
+                const oldV = gradeAuditValue(a[field]), newV = gradeAuditValue(b[field]);
+                if (oldV === newV) return;
+                const lessonType = field.includes('__lt_') ? field.split('__lt_').slice(1).join('__lt_') : '';
+                const datePart = field.split('__lt_')[0];
+                const eventId = `${now}_${Math.random().toString(36).slice(2,9)}`;
+                const action = !oldV ? 'qo‘yildi' : (!newV ? 'o‘chirildi' : 'o‘zgartirildi');
+                log[eventId] = {
+                    timestamp: now, action,
+                    placedAt: action === 'qo‘yildi' ? now : null,
+                    editedAt: action === 'o‘zgartirildi' ? now : null,
+                    deletedAt: action === 'o‘chirildi' ? now : null,
+                    teacher: ctx.teacher || teacher || 'Noma’lum',
+                    className: String(cls), subject: String(sub), group: ctx.group || '',
+                    student: keyToName[sk] || sk, quarter: String(q),
+                    lessonDate: datePart, lessonType: lessonType || 'Asosiy baho',
+                    oldValue: oldV, newValue: newV
+                };
+            });
+        });
+        lsSet('grade_audit', log);
+        if (window.syncGradeAuditToFirebase) window.syncGradeAuditToFirebase(log);
+    }
+
     function saveMarksObj(q, cls, sub, o) {
+        const auditKey = markKey(q, cls, sub);
+        const oldMarks = window.__gradeAuditBefore || JSON.parse(JSON.stringify(getMarksByKey(auditKey) || {}));
+        window.__gradeAuditBefore = null;
+        writeGradeAudit(q, cls, sub, oldMarks, o);
         o.__ts = Date.now();
         const key = markKey(q, cls, sub);
         window.__marksCache[key] = o;
@@ -1893,6 +2001,9 @@
     window.studentLogout = function() { localStorage.removeItem('loggedStudent'); location.reload(); };
 
     document.addEventListener("DOMContentLoaded", () => {
+        const teacherAuditModal = document.getElementById('teacher-grade-audit-modal');
+        if (teacherAuditModal) teacherAuditModal.addEventListener('click', e => { if (e.target === teacherAuditModal) closeTeacherGradeAudit(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeTeacherGradeAudit(); });
         if (loggedStudent) showStudentView();
         else if (teacher) showMain();
         document.getElementById('weekly-controls').style.display = 'none';
@@ -2791,6 +2902,279 @@
     function getAdminsList() { return lsGet('admins_list', []); }
     function saveAdminsList(arr) { lsSet('admins_list', arr); window.syncAdminsListToFirebase(arr); }
     
+    function getGradeAuditRows() {
+        const log = lsGet('grade_audit', {}) || {};
+        const currentTeacher = String(teacher || localStorage.getItem('loggedTeacher') || '').trim().toLocaleLowerCase('uz');
+        const raw = Object.entries(log).map(([auditId, item]) => item ? {...item, _auditId:auditId} : null).filter(Boolean).filter(x => {
+            if (!window.__teacherAuditOnly) return true;
+            return currentTeacher && String(x.teacher || '').trim().toLocaleLowerCase('uz') === currentTeacher;
+        });
+        // Bir o‘quvchi/bitta darsdagi baho bo‘yicha qo‘yish, tahrirlash va o‘chirish voqealarini bitta qatorda jamlaymiz.
+        const grouped = new Map();
+        raw.forEach(x => {
+            const key = [x.className,x.subject,x.group,x.student,x.quarter,x.lessonDate,x.lessonType].map(v=>String(v||'')).join('|');
+            if (!grouped.has(key)) grouped.set(key, {...x, placedTimes:[], editedTimes:[], deletedTimes:[], actions:[], teachers:[], events:[]});
+            const g = grouped.get(key);
+            const kind = gradeAuditKind(x.action);
+            const ts = Number(x.timestamp || x.placedAt || x.editedAt || x.deletedAt || 0);
+            const explicit = kind==='placed' ? (x.placedAt||ts) : kind==='edited' ? (x.editedAt||ts) : (x.deletedAt||ts);
+            const list = kind==='placed' ? g.placedTimes : kind==='edited' ? g.editedTimes : g.deletedTimes;
+            if (explicit && !list.includes(Number(explicit))) list.push(Number(explicit));
+            if (x.action && !g.actions.includes(x.action)) g.actions.push(x.action);
+            if (x.teacher && !g.teachers.includes(x.teacher)) g.teachers.push(x.teacher);
+            g.events.push({...x, timestamp:ts});
+            if (ts >= Number(g.timestamp||0)) {
+                g.timestamp=ts; g.action=x.action||g.action; g.oldValue=x.oldValue ?? g.oldValue; g.newValue=x.newValue ?? g.newValue;
+            }
+        });
+        const rows = [...grouped.values()].map(g=>{
+            ['placedTimes','editedTimes','deletedTimes'].forEach(k=>g[k].sort((a,b)=>a-b));
+            g.teacher = g.teachers.join(', ') || g.teacher || '';
+            return g;
+        });
+        const val = id => (document.getElementById(id)?.value || '').trim().toLowerCase();
+        const from = document.getElementById('audit-from')?.value || '';
+        const to = document.getElementById('audit-to')?.value || '';
+        return rows.filter(x => {
+            const allTimes=[...x.placedTimes,...x.editedTimes,...x.deletedTimes];
+            const inRange = t => { const d=new Date(Number(t)); const iso=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; return (!from||iso>=from)&&(!to||iso<=to); };
+            const actionFilter=document.getElementById('audit-action')?.value || '';
+            return (!val('audit-teacher') || x.teachers.some(t=>t.toLowerCase()===val('audit-teacher'))) &&
+                (!val('audit-class') || String(x.className||'').toLowerCase() === val('audit-class')) &&
+                (!val('audit-subject') || String(x.subject||'').toLowerCase() === val('audit-subject')) &&
+                (!val('audit-group') || String(x.group||'').toLowerCase() === val('audit-group')) &&
+                (!val('audit-student') || String(x.student||'').toLowerCase() === val('audit-student')) &&
+                (!val('audit-lesson-type') || String(x.lessonType||'').toLowerCase() === val('audit-lesson-type')) &&
+                (!actionFilter || x.actions.includes(actionFilter)) &&
+                ((!from&&!to) || allTimes.some(inRange));
+        }).sort((a,b)=>Number(b.timestamp||0)-Number(a.timestamp||0));
+    }
+    function populateGradeAuditFilters() {
+        const rows = Object.values(lsGet('grade_audit', {}) || {}).filter(Boolean);
+        const classSel = document.getElementById('audit-class');
+        const selectedClass = classSel?.value || '';
+        const classValues = [...new Set(rows.map(x=>String(x.className||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'uz'));
+        if (classSel) {
+            const previous = selectedClass;
+            classSel.innerHTML = `<option value="">Barcha sinflar</option>` + classValues.map(v=>`<option value="${hEsc(v)}">${hEsc(v)}</option>`).join('');
+            if (classValues.includes(previous)) classSel.value = previous;
+        }
+
+        // Sinf tanlansa, qolgan filtrlar faqat shu sinfga tegishli
+        // o'qituvchi, fan, guruh, o'quvchi va dars turlarini ko'rsatadi.
+        const scopedRows = selectedClass
+            ? rows.filter(x=>String(x.className||'').trim().toLowerCase()===selectedClass.trim().toLowerCase())
+            : rows;
+        const fields = [
+            ['audit-teacher','teacher','Barcha o‘qituvchilar'],
+            ['audit-subject','subject','Barcha fanlar'],
+            ['audit-group','group','Barcha guruhlar'],
+            ['audit-student','student','Barcha o‘quvchilar'],
+            ['audit-lesson-type','lessonType','Barcha dars turlari']
+        ];
+        fields.forEach(([id,key,placeholder]) => {
+            const sel = document.getElementById(id); if (!sel) return;
+            const previous = sel.value;
+            const values = [...new Set(scopedRows.flatMap(x =>
+                key === 'teacher'
+                    ? (Array.isArray(x.teachers) && x.teachers.length ? x.teachers : [x.teacher])
+                    : [x[key]]
+            ).map(v=>String(v||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'uz'));
+            sel.innerHTML = `<option value="">${placeholder}</option>` + values.map(v=>`<option value="${hEsc(v)}">${hEsc(v)}</option>`).join('');
+            if (values.includes(previous)) sel.value = previous;
+        });
+
+        // Filtr o'zgargan zahoti natijani yangilash.
+        ['audit-class','audit-teacher','audit-subject','audit-group','audit-student','audit-action','audit-lesson-type','audit-from','audit-to'].forEach(id=>{
+            const control=document.getElementById(id);
+            if(control && !control.dataset.auditBound){
+                control.dataset.auditBound='1';
+                control.addEventListener('change',()=>window.renderGradeAudit());
+            }
+        });
+        const info = document.getElementById('audit-history-info');
+        if (info) info.textContent = selectedClass
+            ? `${selectedClass} sinfi bo‘yicha filtrlar ko‘rsatilmoqda. Bazada jami ${rows.length} ta tarix yozuvi bor.`
+            : `Bazadagi jami ${rows.length} ta saqlangan tarix yozuvi. Eski Firebase audit yozuvlari ham shu ro‘yxatga qo‘shiladi.`;
+    }
+
+    function formatGradeAuditTime(value) {
+        if (!value) return '—';
+        const d = new Date(Number(value));
+        if (isNaN(d.getTime())) return '—';
+        return d.toLocaleString('uz-UZ',{year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',hour12:false});
+    }
+    function gradeAuditKind(action) {
+        const a=String(action||'').toLowerCase();
+        if (a.includes('o‘chir') || a.includes("o'chir")) return 'deleted';
+        if (a.includes('o‘zgart') || a.includes("o'zgart")) return 'edited';
+        return 'placed';
+    }
+    function gradeAuditActionTime(x, kind) {
+        const field = kind === 'placed' ? 'placedTimes' : kind === 'edited' ? 'editedTimes' : 'deletedTimes';
+        const values = Array.isArray(x[field]) ? x[field] : [];
+        if (values.length) return values.map(formatGradeAuditTime).join('\n');
+        // Old audit records only had `timestamp`; use it for the matching action.
+        const legacy = kind === 'placed' ? x.placedAt : kind === 'edited' ? x.editedAt : x.deletedAt;
+        const value = legacy || (gradeAuditKind(x.action) === kind ? x.timestamp : null);
+        return formatGradeAuditTime(value);
+    }
+
+    window.openTeacherGradeAudit = function() {
+        if (!teacher && !localStorage.getItem('loggedTeacher')) return alert('Avval o‘qituvchi sifatida kiring.');
+        teacher = teacher || localStorage.getItem('loggedTeacher') || '';
+        const modal = document.getElementById('teacher-grade-audit-modal');
+        const owner = document.getElementById('teacher-audit-owner');
+        if (owner) owner.textContent = '👨‍🏫 O‘qituvchi: ' + teacher + ' · Faqat sizga tegishli yozuvlar';
+        if (modal) modal.style.display = 'block';
+        renderTeacherGradeAudit();
+    };
+    window.closeTeacherGradeAudit = function() {
+        const modal = document.getElementById('teacher-grade-audit-modal');
+        if (modal) modal.style.display = 'none';
+    };
+    window.renderTeacherGradeAudit = function() {
+        const el = document.getElementById('teacher-grade-audit-results');
+        const info = document.getElementById('teacher-grade-audit-info');
+        if (!el) return;
+        const previous = window.__teacherAuditOnly;
+        window.__teacherAuditOnly = true;
+        const rows = getGradeAuditRows();
+        window.__teacherAuditOnly = previous;
+        if (info) info.textContent = 'Sizga tegishli jami ' + rows.length + ' ta baho amali. Boshqa o‘qituvchilarning yozuvlari bu oynaga kiritilmaydi.';
+        if (!rows.length) {
+            el.innerHTML = '<div style="padding:22px;text-align:center;color:#64748b;">Hozircha sizga tegishli baholar tarixi topilmadi.</div>';
+            return;
+        }
+        const headers = ['🟢 QO‘YILGAN VAQT','🔵 TAHRIRLANGAN VAQT','🔴 O‘CHIRILGAN VAQT','AMAL TURI','SINF','FAN','GURUH','O‘QUVCHI','DARS SANASI','DARS TURI','ESKI BAHO','YANGI BAHO'];
+        el.innerHTML = `<div style="padding:8px 10px;background:#eef2ff;color:#3730a3;font-weight:800;border-radius:7px;margin-bottom:8px;">Jami: ${rows.length} ta amal</div><div style="display:flex;gap:12px;flex-wrap:wrap;margin:0 0 9px;font-size:12px;font-weight:700;"><span style="color:#166534;background:#dcfce7;padding:5px 9px;border-radius:8px;">🟢 Qo‘yilgan</span><span style="color:#1d4ed8;background:#dbeafe;padding:5px 9px;border-radius:8px;">🔵 O‘zgartirilgan</span><span style="color:#b91c1c;background:#fee2e2;padding:5px 9px;border-radius:8px;">🔴 O‘chirilgan</span></div><table style="min-width:1250px;width:100%;border-collapse:collapse;font-size:12px;"><thead><tr>${headers.map(h=>`<th style="position:sticky;top:0;background:#4338ca;color:white;padding:10px;white-space:nowrap;z-index:2;">${h}</th>`).join('')}</tr></thead><tbody>${rows.map((x,i)=>{const actions=x.actions||[x.action||''];const chips=actions.map(action=>{const k=gradeAuditKind(action);const cfg=k==='deleted'?['#fee2e2','#b91c1c','🔴']:k==='edited'?['#dbeafe','#1d4ed8','🔵']:['#dcfce7','#166534','🟢'];return `<span style="display:inline-block;background:${cfg[0]};color:${cfg[1]};padding:4px 8px;border-radius:12px;font-weight:800;white-space:nowrap;margin:2px;">${cfg[2]} ${hEsc(action)}</span>`}).join('');return `<tr style="background:${i%2?'#f8fafc':'#fff'}"><td style="padding:8px;white-space:pre-line;color:#166534;background:#f0fdf4;font-weight:800;">${hEsc(gradeAuditActionTime(x,'placed'))}</td><td style="padding:8px;white-space:pre-line;color:#1d4ed8;background:#eff6ff;font-weight:800;">${hEsc(gradeAuditActionTime(x,'edited'))}</td><td style="padding:8px;white-space:pre-line;color:#b91c1c;background:#fef2f2;font-weight:800;">${hEsc(gradeAuditActionTime(x,'deleted'))}</td><td style="padding:8px;min-width:145px;">${chips||'—'}</td><td style="padding:8px;">${hEsc(x.className||'—')}</td><td style="padding:8px;">${hEsc(x.subject||'—')}</td><td style="padding:8px;">${hEsc(x.group||'—')}</td><td style="padding:8px;font-weight:700;">${hEsc(x.student||'—')}</td><td style="padding:8px;white-space:nowrap;">${hEsc(x.lessonDate||'—')}</td><td style="padding:8px;">${hEsc(x.lessonType||'—')}</td><td style="padding:8px;text-align:center;">${hEsc(x.oldValue||'—')}</td><td style="padding:8px;text-align:center;font-weight:800;">${hEsc(x.newValue||'—')}</td></tr>`}).join('')}</tbody></table>`;
+    };
+    window.teacherAuditExport = function(fnName) {
+        const fn = window[fnName];
+        if (typeof fn !== 'function') return alert('Saqlash funksiyasi topilmadi.');
+        window.__teacherAuditOnly = true;
+        try {
+            const result = fn();
+            if (result && typeof result.finally === 'function') result.finally(() => { window.__teacherAuditOnly = false; });
+            else window.__teacherAuditOnly = false;
+        } catch (e) {
+            window.__teacherAuditOnly = false;
+            console.error(e);
+            alert('Faylni saqlashda xatolik yuz berdi.');
+        }
+    };
+
+    window.resetGradeAuditFilters = function() {
+        ['audit-teacher','audit-class','audit-subject','audit-group','audit-student','audit-action','audit-lesson-type','audit-from','audit-to'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+        renderGradeAudit();
+    };
+    window.renderGradeAudit = function() {
+        const el = document.getElementById('grade-audit-results'); if (!el) return;
+        populateGradeAuditFilters();
+        const rows = getGradeAuditRows();
+        if (!rows.length) { el.innerHTML = '<div style="padding:18px;text-align:center;color:#64748b;">Tanlangan shartlar bo‘yicha tarix topilmadi. Filtrlarni tozalab qayta qidiring.</div>'; return; }
+        el.innerHTML = `<div style="display:flex;gap:8px;flex-wrap:wrap;font-weight:700;margin:4px 0 10px;align-items:center;"><span>Jami: ${rows.length} ta amal</span><span style="background:#dcfce7;color:#166534;padding:4px 9px;border-radius:14px;font-size:12px;">🟢 Qo‘yildi</span><span style="background:#dbeafe;color:#1d4ed8;padding:4px 9px;border-radius:14px;font-size:12px;">🔵 O‘zgartirildi</span><span style="background:#fee2e2;color:#b91c1c;padding:4px 9px;border-radius:14px;font-size:12px;">🔴 O‘chirildi</span></div><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;margin-bottom:9px;"><label style="font-weight:800;font-size:12px;display:flex;gap:6px;align-items:center;"><input type="checkbox" id="audit-select-all" onchange="toggleAllGradeAuditSelection(this.checked)"> Barchasini tanlash</label><button type="button" onclick="deleteSelectedGradeAuditEvents()" style="background:#dc2626;color:white;border:0;border-radius:8px;padding:8px 12px;font-weight:800;cursor:pointer;">🗑 Tanlanganlarni o‘chirish</button><span id="audit-selected-count" style="font-size:12px;color:#475569;font-weight:700;">0 ta tanlangan</span></div><table id="grade-audit-table" style="min-width:1500px;width:100%;border-collapse:separate;border-spacing:0;font-size:12px;"><thead><tr style="background:#1e3a8a;color:white;">${['TANLASH','🟢 QO‘YILGAN VAQT','🔵 TAHRIRLANGAN VAQT','🔴 O‘CHIRILGAN VAQT','AMAL TURI','O‘QITUVCHI','SINF','FAN','GURUH','O‘QUVCHI','DARS SANASI','DARS TURI','ESKI BAHO','YANGI BAHO'].map(h=>`<th scope="col" style="padding:12px 10px;position:sticky;top:0;z-index:20;white-space:nowrap;background:#1e3a8a!important;color:#fff!important;font-size:12px;font-weight:900;text-align:center;border-bottom:3px solid #93c5fd;box-shadow:0 2px 4px rgba(15,23,42,.18);">${h}</th>`).join('')}</tr></thead><tbody>${rows.map((x,i)=>{return `<tr style="background:${i%2?'#f8fafc':'#ffffff'};border-bottom:1px solid #e2e8f0;"><td style="padding:8px;text-align:center;"><div style="display:flex;flex-direction:column;gap:7px;align-items:center;">${(x.events||[]).map(ev=>`<input class="grade-audit-select" type="checkbox" value="${hEsc(String(ev._auditId||''))}" onchange="updateGradeAuditSelectedCount()" aria-label="Ushbu amalni tanlash">`).join('')}</div></td><td style="padding:9px;white-space:pre-line;min-width:145px;line-height:1.55;color:#166534;font-weight:700;">${hEsc(gradeAuditActionTime(x,'placed'))}</td><td style="padding:9px;white-space:pre-line;min-width:145px;line-height:1.55;color:#1d4ed8;font-weight:700;">${hEsc(gradeAuditActionTime(x,'edited'))}</td><td style="padding:9px;white-space:pre-line;min-width:145px;line-height:1.55;color:#b91c1c;font-weight:700;">${hEsc(gradeAuditActionTime(x,'deleted'))}</td><td style="padding:9px;min-width:210px;"><div style="display:flex;flex-direction:column;align-items:flex-start;gap:7px;">${(x.events||[]).map(ev=>{const ek=gradeAuditKind(ev.action);const ec=ek==='deleted'?['#fee2e2','#b91c1c','🔴']:ek==='edited'?['#dbeafe','#1d4ed8','🔵']:['#dcfce7','#166534','🟢'];const aid=String(ev._auditId||'');return `<div style="display:flex;align-items:center;gap:5px;flex-wrap:wrap;border:1px solid ${ec[0]};padding:5px;border-radius:8px;background:#fff;"><span style="display:inline-block;padding:5px 9px;border-radius:15px;background:${ec[0]};color:${ec[1]};font-weight:800;white-space:nowrap;">${ec[2]} ${hEsc(ev.action||'Amal')}</span></div>`;}).join('')}</div></td><td style="padding:9px;">${hEsc(x.teacher||'—')}</td><td style="padding:9px;">${hEsc(x.className||'—')}</td><td style="padding:9px;">${hEsc(x.subject||'—')}</td><td style="padding:9px;">${hEsc(x.group||'—')}</td><td style="padding:9px;font-weight:700;">${hEsc(x.student||'—')}</td><td style="padding:9px;white-space:nowrap;">${hEsc(x.lessonDate||'—')}</td><td style="padding:9px;">${hEsc(x.lessonType||'—')}</td><td style="padding:9px;text-align:center;">${hEsc(x.oldValue||'—')}</td><td style="padding:9px;text-align:center;font-weight:800;">${hEsc(x.newValue||'—')}</td></tr>`}).join('')}</tbody></table>`;
+        updateGradeAuditSelectedCount();
+    };
+    window.toggleAllGradeAuditSelection = function(checked) {
+        document.querySelectorAll('#grade-audit-results .grade-audit-select').forEach(cb=>{cb.checked=!!checked;});
+        updateGradeAuditSelectedCount();
+    };
+    window.updateGradeAuditSelectedCount = function() {
+        const boxes=[...document.querySelectorAll('#grade-audit-results .grade-audit-select')];
+        const count=boxes.filter(cb=>cb.checked).length;
+        const label=document.getElementById('audit-selected-count'); if(label) label.textContent=count+' ta amal tanlangan';
+        const all=document.getElementById('audit-select-all'); if(all){all.checked=boxes.length>0&&count===boxes.length;all.indeterminate=count>0&&count<boxes.length;}
+    };
+    function removeGradeAuditActualValue(ev, choice) {
+        const kind=gradeAuditKind(ev.action);
+        if (kind==='deleted') return {removed:false,reason:'Bu amal paytida baho avval o‘chirilgan edi'};
+        const target=choice==='old' ? gradeAuditValue(ev.oldValue) : gradeAuditValue(ev.newValue);
+        if (!target) return {removed:false,reason:'Tanlangan amal uchun o‘chiriladigan baho qiymati yo‘q'};
+        const q=String(ev.quarter||''); const cls=String(ev.className||''); const sub=String(ev.subject||'');
+        const key=markKey(q,cls,sub); const marks=JSON.parse(JSON.stringify(getMarksByKey(key)||{}));
+        const studentKey=getStudentKeyByName(cls,ev.student||'');
+        const dateKey=String(ev.lessonDate||'')+(ev.lessonType&&ev.lessonType!=='Asosiy baho'?'__lt_'+ev.lessonType:'');
+        const current=marks[studentKey] && marks[studentKey][dateKey];
+        if (gradeAuditValue(current)!==target) return {removed:false,reason:`${ev.student||'O‘quvchi'}: jadvalda hozirgi baho ${current==null?'yo‘q':current}, tanlangan qiymat ${target}. Jadval o‘zgartirilmadi`};
+        delete marks[studentKey][dateKey];
+        if (marks[studentKey] && !Object.keys(marks[studentKey]).some(k=>!k.startsWith('__'))) delete marks[studentKey];
+        marks.__ts=Date.now();
+        window.__marksCache=window.__marksCache||{}; window.__marksCache[key]=marks;
+        lsSet(key,marks); if(window.syncToFirebase) window.syncToFirebase(key,marks);
+        return {removed:true,reason:`${ev.student||'O‘quvchi'}: ${target} bahosi jadvaldan o‘chirildi`};
+    }
+    window.deleteSelectedGradeAuditEvents = function(singleId) {
+        const ids=singleId?[String(singleId)]:[...document.querySelectorAll('#grade-audit-results .grade-audit-select:checked')].map(cb=>cb.value).filter(Boolean);
+        if(!ids.length) return alert('Avval o‘chiriladigan amallarni belgilang.');
+        const log=lsGet('grade_audit',{})||{}; const events=ids.map(id=>log[id]).filter(Boolean);
+        if(!events.length) return alert('Tanlangan amallar topilmadi yoki avval o‘chirilgan.');
+        const pass=window.prompt('Tanlangan amal(lar)ni o‘chirish uchun Sozlamalar parolini kiriting:');
+        if(pass===null) return;
+        if(pass!=='0000') return alert('Sozlamalar paroli xato! Hech narsa o‘chirilmadi.');
+        const canRemoveGrade=events.some(ev=>gradeAuditKind(ev.action)!=='deleted' && (ev.newValue||ev.oldValue));
+        let choice='history';
+        if(canRemoveGrade){
+            const answer=window.prompt(`O‘chirish turini tanlang:\n1 — Faqat baholar tarixidan o‘chirish\n2 — Tarixdan va jadvaldagi YANGI/joriy bahodan o‘chirish\n3 — Tarixdan va jadvalda aynan OLD baho turgan bo‘lsa, o‘shani o‘chirish\n\nRaqamini kiriting (1, 2 yoki 3):`,'1');
+            if(answer===null) return;
+            if(!['1','2','3'].includes(answer.trim())) return alert('Tanlov noto‘g‘ri. Hech narsa o‘chirilmadi.');
+            choice=answer.trim()==='1'?'history':answer.trim()==='2'?'new':'old';
+        }
+        const detail=choice==='history'?'Faqat tarix yozuvlari o‘chadi. Jadvaldagi baholar saqlanadi.':choice==='new'?'Tarix yozuvlari va jadvalda aynan shu amalning yangi/joriy bahosi turgan kataklar o‘chiriladi.':'Tarix yozuvlari va jadvalda aynan shu amalning eski bahosi turgan kataklar o‘chiriladi.';
+        if(!confirm(`${events.length} ta amal tanlandi.
+${detail}
+
+Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
+        const results=[];
+        events.forEach(ev=>{
+            if(choice!=='history') results.push(removeGradeAuditActualValue(ev,choice));
+            delete log[ids.find(id=>log[id]===ev)];
+        });
+        lsSet('grade_audit',log); if(window.syncGradeAuditToFirebase) window.syncGradeAuditToFirebase(log);
+        window.renderGradeAudit();
+        const removed=results.filter(x=>x.removed).length;
+        const skipped=results.filter(x=>!x.removed).length;
+        alert(choice==='history'?`${events.length} ta amal faqat tarixdan o‘chirildi.`:`${events.length} ta tarix yozuvi o‘chirildi. Jadvaldan bahosi o‘chirilgan: ${removed} ta. Jadvalga tegilmagan: ${skipped} ta.`+(skipped?'\n'+results.filter(x=>!x.removed).map(x=>x.reason).join('\n'):''));
+    };
+    window.deleteGradeAuditEvent = function(auditId) { window.deleteSelectedGradeAuditEvents(auditId); };
+
+    window.exportGradeAuditCSV = function() {
+        const rows = getGradeAuditRows();
+        const cols = ['Qo‘yilgan vaqt','Tahrirlangan vaqt','O‘chirilgan vaqt','Amal','O‘qituvchi','Sinf','Fan','Guruh','O‘quvchi','Qaysi kun uchun','Dars turi','Eski baho','Yangi baho'];
+        const data = rows.map(x=>[gradeAuditActionTime(x,'placed'),gradeAuditActionTime(x,'edited'),gradeAuditActionTime(x,'deleted'),x.action,x.teacher,x.className,x.subject,x.group,x.student,x.lessonDate,x.lessonType,x.oldValue,x.newValue]);
+        const csv = '\\uFEFF' + [cols,...data].map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(';')).join('\\r\\n');
+        const blob = new Blob([csv],{type:'text/csv;charset=utf-8;'}); const url=URL.createObjectURL(blob); const a=document.createElement('a'); a.href=url; a.download='baholar_tarixi.csv'; a.click(); URL.revokeObjectURL(url);
+    };
+
+    function gradeAuditExportData() {
+        const rows=getGradeAuditRows();
+        const headers=['Qo‘yilgan vaqt','Tahrirlangan vaqt','O‘chirilgan vaqt','Amal','O‘qituvchi','Sinf','Fan','Guruh','O‘quvchi','Qaysi kun uchun','Dars turi','Eski baho','Yangi baho'];
+        const data=rows.map(x=>[gradeAuditActionTime(x,'placed'),gradeAuditActionTime(x,'edited'),gradeAuditActionTime(x,'deleted'),x.action||'',x.teacher||'',x.className||'',x.subject||'',x.group||'',x.student||'',x.lessonDate||'',x.lessonType||'',x.oldValue||'',x.newValue||'']);
+        return {rows,headers,data};
+    }
+    function downloadAuditBlob(content,type,name){const blob=new Blob([content],{type});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1200);}
+    function auditActionColor(action){const a=String(action||'').toLowerCase();return a.includes('o‘chir')||a.includes("o'chir")?'#FEE2E2':a.includes('o‘zgart')||a.includes("o'zgart")?'#DBEAFE':'#DCFCE7';}
+    window.exportGradeAuditExcel=function(){
+        const {headers,data}=gradeAuditExportData();const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        const html=`<html><head><meta charset="utf-8"></head><body><h2>Baholar tarixi va audit hisoboti</h2><table border="1"><thead><tr>${headers.map(h=>`<th style="background:#1e3a8a;color:white">${esc(h)}</th>`).join('')}</tr></thead><tbody>${data.map(r=>`<tr>${r.map((v,i)=>`<td style="${i===1?`background:${auditActionColor(v)};font-weight:bold`:''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</tbody></table></body></html>`;
+        downloadAuditBlob('\uFEFF'+html,'application/vnd.ms-excel;charset=utf-8;','baholar_tarixi.xls');
+    };
+    window.exportGradeAuditWord=function(){
+        const {headers,data}=gradeAuditExportData();const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        const html=`<html><head><meta charset="utf-8"><style>body{font-family:Arial}h2{color:#1e3a8a}table{border-collapse:collapse;width:100%;font-size:9pt}th{background:#1e3a8a;color:white}td,th{border:1px solid #9ca3af;padding:5px}tr:nth-child(even){background:#f8fafc}</style></head><body><h2>Baholar tarixi va audit hisoboti</h2><p>Jami: ${data.length} ta amal</p><table><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr>${data.map(r=>`<tr>${r.map((v,i)=>`<td style="${i===1?`background:${auditActionColor(v)};font-weight:bold`:''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</table></body></html>`;
+        downloadAuditBlob('\uFEFF'+html,'application/msword;charset=utf-8;','baholar_tarixi.doc');
+    };
+    window.exportGradeAuditPDF=function(){
+        const {headers,data}=gradeAuditExportData();const w=window.open('','_blank');if(!w){alert('PDF uchun yangi oyna ochilmadi. Brauzerda pop-up oynalarga ruxsat bering.');return;}
+        const esc=v=>String(v??'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        w.document.write(`<html><head><meta charset="utf-8"><title>Baholar tarixi</title><style>@page{size:A4 landscape;margin:10mm}body{font:10px Arial;color:#172554}h2{font-size:18px}table{border-collapse:collapse;width:100%;font-size:8px}th{background:#1e3a8a;color:white}td,th{border:1px solid #94a3b8;padding:4px}tr:nth-child(even){background:#f8fafc}</style></head><body><h2>Baholar tarixi va audit hisoboti</h2><p>Jami: ${data.length} ta amal</p><table><tr>${headers.map(h=>`<th>${esc(h)}</th>`).join('')}</tr>${data.map(r=>`<tr>${r.map((v,i)=>`<td style="${i===1?`background:${auditActionColor(v)}`:''}">${esc(v)}</td>`).join('')}</tr>`).join('')}</table><script>window.onload=()=>window.print()<\/script></body></html>`);w.document.close();
+    };
+    window.exportGradeAuditPPTX=async function(){
+        const {headers,data}=gradeAuditExportData();if(!data.length){alert('Yuklab olish uchun tarix topilmadi.');return;}
+        if(!window.PptxGenJS){const sc=document.createElement('script');sc.src='https://cdn.jsdelivr.net/npm/pptxgenjs@3.12.0/dist/pptxgen.bundle.js';document.head.appendChild(sc);try{await new Promise((res,rej)=>{sc.onload=res;sc.onerror=rej;});}catch(e){alert('PowerPoint eksporti uchun internet kerak.');return;}}
+        try{const pptx=new window.PptxGenJS();pptx.layout='LAYOUT_WIDE';pptx.author='Baholar tarixi';pptx.subject='Audit hisoboti';pptx.title='Baholar tarixi';const per=12,total=Math.ceil(data.length/per);for(let p=0;p<total;p++){const slide=pptx.addSlide();slide.background={color:'F8FAFC'};slide.addText('BAHOLAR TARIXI VA AUDIT HISOBOTI',{x:.3,y:.15,w:12.7,h:.35,fontSize:18,bold:true,color:'1E3A8A'});slide.addText(`Jami ${data.length} ta amal | ${p+1}/${total}-slayd`,{x:.3,y:.52,w:12.7,h:.22,fontSize:9,color:'475569'});const chunk=data.slice(p*per,(p+1)*per);const tableRows=[headers.map(h=>({text:h,options:{bold:true,color:'FFFFFF',fill:'1E3A8A',fontSize:7}})),...chunk.map((r,ri)=>r.map((v,i)=>({text:String(v??''),options:{fontSize:6,fill:i===1?auditActionColor(v).replace('#',''):(ri%2?'F1F5F9':'FFFFFF'),color:'1E293B'}})))];slide.addTable(tableRows,{x:.25,y:.85,w:12.85,h:6.25,border:{type:'solid',color:'CBD5E1',pt:.5},colW:[1.15,1.15,1.15,.8,.85,.45,.7,.65,1.05,.8,.7,.4,.4],rowH:.45,margin:.04,autoFit:false});}await pptx.writeFile({fileName:'baholar_tarixi.pptx'});}catch(e){console.error(e);alert('PowerPoint faylini yaratishda xatolik yuz berdi.');}
+    };
+
     function renderAdminsList() {
         const cont = document.getElementById('admins-list-container');
         if (!cont) return;
@@ -3681,11 +4065,14 @@
     window.saveM = function(q, cls, sub, studentKey, dIdx, val, ltShort, groupIdx) {
         if (!studentKey) return;
         const gi = Number.isInteger(Number(groupIdx)) ? Number(groupIdx) : -1;
+        const groupList = (lsGet(`groups_${cls}_${sub}`, []) || []);
+        window.__gradeAuditContext = {teacher: teacher || '', group: gi >= 0 ? (groupList[gi]?.name || `Guruh ${gi+1}`) : ''};
         const dates = generateDates(cls, sub, q, gi);
         const d = dates[dIdx];
         if (!d) return;
         const baseKey = dateKey(d);
         const m = getMarks(q, cls, sub);
+        window.__gradeAuditBefore = JSON.parse(JSON.stringify(m || {}));
         if (!m[studentKey]) m[studentKey] = {};
         const row = m[studentKey];
         const v = (val||'').toUpperCase().trim();
@@ -3733,7 +4120,9 @@
     };
     window.saveMQ = function(q, cls, sub, studentKey, val) {
         if (!studentKey) return;
+        window.__gradeAuditContext = {teacher: teacher || '', group: ''};
         const m = getMarks(q, cls, sub);
+        window.__gradeAuditBefore = JSON.parse(JSON.stringify(m || {}));
         if (!m[studentKey]) m[studentKey] = {};
         const v = (val||'').toUpperCase().trim();
         if (!m[studentKey].__meta || typeof m[studentKey].__meta !== 'object') m[studentKey].__meta = {};
