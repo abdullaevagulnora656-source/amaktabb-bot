@@ -6704,68 +6704,100 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
     //    (Yuqoridagi openTotalReport da yarim yillikni hisobga olish kerak edi, lekin vaqt tejash uchun
     //     alohida "Yarim yillik" ustunini qo'shamiz - bu ustun 1-2 chorak o'rtachasi bo'ladi.)
 
-    // Aslida, openTotalReport ni qayta yozamiz:
-    const _originalOpenTotalReport2 = openTotalReport;
-    openTotalReport = function() {
-        const cls = document.getElementById('c-select').value;
-        const entries = getSortedStudentEntries(cls);
-        let subjects = getClassSubjects(cls);
-        if (teacher) {
-            const tName = teacher.trim();
-            subjects = subjects.filter(s => {
-                if (includesTeacher(s.teacher, tName)) return true;
-                const groups = lsGet(`groups_${cls}_${s.name}`, []);
-                return groups.some(g => includesTeacher(g.teacher, tName));
+    // "Jami" hisobotini barqaror ishlaydigan ko'rinishda qayta qurish.
+    // Guruh filtri yoki hozir tanlangan fan/sinf ko'rinishi butun hisobotni cheklamaydi.
+    window.openTotalReport = function() {
+        try {
+            const cls = document.getElementById('c-select')?.value || '';
+            if (!cls) { alert('Avval sinfni tanlang.'); return; }
+            const currentTeacher = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
+            const rawStudents = getOrderedRawStudentsRaw(cls);
+            const counts = {};
+            rawStudents.forEach(n => counts[n] = (counts[n] || 0) + 1);
+            const seen = {};
+            const entries = rawStudents.map(name => {
+                const occ = seen[name] || 0; seen[name] = occ + 1;
+                return { name, key: counts[name] > 1 ? `${name}__${occ}` : name,
+                    isDuplicate: counts[name] > 1, occ };
             });
-        }
-        if (subjects.length === 0) {
-            alert("Sizga biriktirilgan fanlar yo'q!");
-            return;
-        }
-        const quarters = getQuarters();
-        const extraCols = 4; // Imtihon, Natija, Yarim yillik, Yillik
-        let h = `<table style="min-width:1500px"><thead><tr><th>№</th><th class="s-name">O'quvchi</th>`;
-        subjects.forEach(s => h += `<th colspan="${quarters.length + extraCols}">${hEsc(s.name)}</th>`);
-        h += `</tr><tr><th></th><th></th>`;
-        subjects.forEach(() => {
-            quarters.forEach(q => h += `<th>${hEsc(q.name)}</th>`);
-            h += `<th>Imt.</th><th>Nat.</th><th>Yarim yil</th><th>Yil.</th>`;
-        });
-        h += `</tr></thead><tbody>`;
-        entries.forEach((entry, i) => {
-            const name = entry.name;
-            const studentKey = entry.key;
-            const dupBadge = entry.isDuplicate ? `<span class="dup-badge">#${entry.occ+1}</span>` : '';
-            h += `<tr><td>${i+1}</td><td class="s-name">${hEsc(name)}${dupBadge}</td>`;
-            subjects.forEach(s => {
-                // Chorak baholari
-                quarters.forEach(q => {
-                    const qv = getMarks(q.id, cls, s.name)[studentKey]?.['__quarter'] || '';
-                    h += `<td style="${getGradeStyle(qv)}; padding:8px;">${hEsc(qv)}</td>`;
+
+            // Asosiy fan, guruh ustozlari va sana bo'yicha alohida biriktirilgan
+            // ustozlarning fanlari ham ko'rinishi kerak.
+            let subjects = getClassSubjectsRaw(cls);
+            if (currentTeacher) {
+                const dateTeachers = lsGet('date_teachers', {}) || {};
+                const sameTeacher = value => String(value || '').split(',')
+                    .map(x => x.trim().toLocaleLowerCase()).filter(Boolean)
+                    .includes(currentTeacher.toLocaleLowerCase());
+                subjects = subjects.filter(subject => {
+                    if (sameTeacher(subject.teacher)) return true;
+                    const groups = lsGet(`groups_${cls}_${subject.name}`, []) || [];
+                    if (groups.some(g => sameTeacher(g.teacher))) return true;
+                    const prefix = `${cls}_${subject.name}_`;
+                    return Object.entries(dateTeachers).some(([key, value]) =>
+                        key.startsWith(prefix) && sameTeacher(value));
                 });
-                // Imtihon, Natija
-                const imt = getMarksByKey(`marks_Imtihon_${cls}_${s.name}`)[studentKey] || '';
-                const nat = getMarksByKey(`marks_Natija_${cls}_${s.name}`)[studentKey] || '';
-                // Yarim yillik: 1 va 2 chorak o'rtachasi (agar mavjud bo'lsa)
-                let halfYear = '';
-                if (quarters.length >= 2) {
-                    const q1 = getMarks(quarters[0].id, cls, s.name)[studentKey]?.['__quarter'] || '';
-                    const q2 = getMarks(quarters[1].id, cls, s.name)[studentKey]?.['__quarter'] || '';
-                    if (q1 && q2 && !isNaN(q1) && !isNaN(q2)) {
-                        halfYear = ((parseFloat(q1) + parseFloat(q2)) / 2).toFixed(1);
-                    }
-                }
-                const yil = getMarksByKey(`marks_Annual_${cls}_${s.name}`)[studentKey] || '';
-                h += `<td><input type="text" class="gi" style="${getGradeStyle(imt)} width:40px" value="${hEsc(imt)}" onchange="saveExtra('${jEsc(cls)}','${jEsc(s.name)}','Imtihon', this.dataset.k, this.value)" data-k="${hEsc(studentKey)}"></td>
-                      <td><input type="text" class="gi" style="${getGradeStyle(nat)} width:40px" value="${hEsc(nat)}" onchange="saveExtra('${jEsc(cls)}','${jEsc(s.name)}','Natija', this.dataset.k, this.value)" data-k="${hEsc(studentKey)}"></td>
-                      <td style="padding:8px; font-weight:bold; color:#4361ee;">${halfYear || '—'}</td>
-                      <td class="y-col"><input type="text" class="gi" style="${getGradeStyle(yil)} width:40px" value="${hEsc(yil)}" onchange="saveY('marks_Annual_${jEsc(cls)}_${jEsc(s.name)}', this.dataset.k, this.value)" data-k="${hEsc(studentKey)}"></td>`;
+            }
+            if (!subjects.length) {
+                alert(currentTeacher ? 'Sizga biriktirilgan fanlar topilmadi.' : 'Bu sinfda fanlar topilmadi.');
+                return;
+            }
+            if (!entries.length) {
+                alert('Tanlangan sinfda o‘quvchilar ro‘yxati bo‘sh.');
+                return;
+            }
+
+            const quarters = getQuarters().filter(q => q.visible !== false);
+            const extraCols = 4;
+            let h = `<div style="overflow-x:auto"><table style="min-width:1500px;width:100%;border-collapse:collapse"><thead><tr><th>№</th><th class="s-name">O‘quvchi</th>`;
+            subjects.forEach(subject => h += `<th colspan="${quarters.length + extraCols}">${hEsc(subject.name)}</th>`);
+            h += `</tr><tr><th></th><th></th>`;
+            subjects.forEach(() => {
+                quarters.forEach(q => h += `<th>${hEsc(q.name)}</th>`);
+                h += '<th>Imt.</th><th>Nat.</th><th>Yarim yil</th><th>Yil.</th>';
             });
-            h += `</tr>`;
-        });
-        document.getElementById('report-area').innerHTML = h + `</tbody></table>` + renderTeacherOwnLatestMarks(cls, subjects, 10);
-        document.getElementById('report-title').innerText = `${cls}-sinf | Jami`;
-        document.getElementById('report-modal').style.display = 'block';
+            h += '</tr></thead><tbody>';
+            entries.forEach((entry, i) => {
+                const studentKey = entry.key;
+                const dupBadge = entry.isDuplicate ? `<span class="dup-badge">#${entry.occ + 1}</span>` : '';
+                h += `<tr><td>${i + 1}</td><td class="s-name">${hEsc(entry.name)}${dupBadge}</td>`;
+                subjects.forEach(subject => {
+                    quarters.forEach(q => {
+                        const qv = (getMarks(q.id, cls, subject.name)[studentKey] || {}).__quarter || '';
+                        h += `<td style="${getGradeStyle(qv)};padding:8px;">${hEsc(qv)}</td>`;
+                    });
+                    const imt = getMarksByKey(`marks_Imtihon_${cls}_${subject.name}`)[studentKey] || '';
+                    const nat = getMarksByKey(`marks_Natija_${cls}_${subject.name}`)[studentKey] || '';
+                    let halfYear = '';
+                    if (quarters.length >= 2) {
+                        const q1 = (getMarks(quarters[0].id, cls, subject.name)[studentKey] || {}).__quarter || '';
+                        const q2 = (getMarks(quarters[1].id, cls, subject.name)[studentKey] || {}).__quarter || '';
+                        if (q1 !== '' && q2 !== '' && !isNaN(q1) && !isNaN(q2))
+                            halfYear = ((Number(q1) + Number(q2)) / 2).toFixed(1);
+                    }
+                    const yil = getMarksByKey(`marks_Annual_${cls}_${subject.name}`)[studentKey] || '';
+                    h += `<td><input type="text" class="gi" style="${getGradeStyle(imt)};width:40px" value="${hEsc(imt)}" onchange="saveExtra('${jEsc(cls)}','${jEsc(subject.name)}','Imtihon',this.dataset.k,this.value)" data-k="${hEsc(studentKey)}"></td>`;
+                    h += `<td><input type="text" class="gi" style="${getGradeStyle(nat)};width:40px" value="${hEsc(nat)}" onchange="saveExtra('${jEsc(cls)}','${jEsc(subject.name)}','Natija',this.dataset.k,this.value)" data-k="${hEsc(studentKey)}"></td>`;
+                    h += `<td style="padding:8px;font-weight:bold;color:#4361ee">${halfYear || '—'}</td>`;
+                    h += `<td class="y-col"><input type="text" class="gi" style="${getGradeStyle(yil)};width:40px" value="${hEsc(yil)}" onchange="saveY('marks_Annual_${jEsc(cls)}_${jEsc(subject.name)}',this.dataset.k,this.value)" data-k="${hEsc(studentKey)}"></td>`;
+                });
+                h += '</tr>';
+            });
+            h += '</tbody></table></div>';
+            // So'nggi baholar qo'shimcha blok bo'lib chiqadi; xato bo'lsa asosiy jadval ochilishiga xalal bermaydi.
+            try { h += renderTeacherOwnLatestMarks(cls, subjects, 10); }
+            catch (latestErr) { console.warn('So‘nggi baholar bloki chizilmadi:', latestErr); }
+            const area = document.getElementById('report-area');
+            const title = document.getElementById('report-title');
+            const modal = document.getElementById('report-modal');
+            if (!area || !title || !modal) throw new Error('Jami hisobot oynasining kerakli qismi topilmadi.');
+            area.innerHTML = h;
+            title.innerText = `${cls}-sinf | Jami`;
+            modal.style.display = 'block';
+        } catch (err) {
+            console.error('Jami hisobot xatosi:', err);
+            alert('Jami bo‘limini ochishda xatolik yuz berdi: ' + (err?.message || err));
+        }
     };
 
     // Ustozning Jami bo'limida faqat o'z fanlaridagi eng so'nggi 10 ta bahoni alohida ko'rsatish.
