@@ -3803,32 +3803,54 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
     // Yopilgan yoki boshqa ustozga biriktirilgan guruh/sana ustunida
     // dars turlarini o'zgartirishga ruxsat berilmaydi.
     function canManageLessonTypesForColumn(cls, sub, q, dIdx, groupIdx) {
+        // Qulflangan sana/guruh ustuniga hech qaysi ustozga ruxsat berilmaydi.
         const locks = (lsGet('lock_settings', {}) || {})[cls] || {};
         if (isDateLocked(locks, sub, q, dIdx, groupIdx)) return false;
 
+        const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
+        if (!current) return false;
+        const norm = value => String(value || '').trim().toLocaleLowerCase();
+        const matchesCurrent = value => String(value || '').split(',')
+            .map(x => norm(x)).filter(Boolean).includes(norm(current));
+
+        const assignedTeachers = [];
+        const addTeacher = value => { if (value && String(value).trim()) assignedTeachers.push(value); };
+
+        // Sinf rahbari va aynan shu fanga biriktirilgan asosiy ustoz.
+        addTeacher((getClassTeachers() || {})[cls]);
+        const subject = (getClassSubjectsRaw(cls) || []).find(x => x && x.name === sub);
+        addTeacher(subject && subject.teacher);
+
+        // Guruh ustozini ham hisobga olamiz.
         const gi = Number(groupIdx);
         const groups = lsGet(`groups_${cls}_${sub}`, []) || [];
-        const dt = lsGet('date_teachers', {}) || {};
-
         if (Number.isInteger(gi) && gi >= 0) {
             const group = groups[gi];
-            if (!group) return false;
-            if (group.teacher && !checkAccess(group.teacher)) return false;
-
-            // Guruh/sana uchun umumiy yoki dars turi kesimidagi biriktirishlar.
-            const generic = dt[groupDateTeacherKey(cls, sub, q, dIdx, gi)] || '';
-            if (generic && !checkAccess(generic)) return false;
-
-            const types = getLessonTypesForColumn(cls, sub, q, dIdx, gi);
-            for (const type of types) {
-                const specific = dt[groupDateTeacherKey(cls, sub, q, dIdx, gi, type)] || '';
-                if (specific && !checkAccess(specific)) return false;
-            }
-        } else {
-            const assigned = dt[`${cls}_${sub}_${q}_d_${dIdx}`] || '';
-            if (assigned && !checkAccess(assigned)) return false;
+            if (group) addTeacher(group.teacher);
         }
-        return true;
+
+        // Sana bo‘yicha umumiy biriktirish.
+        const dt = lsGet('date_teachers', {}) || {};
+        addTeacher(dt[`${cls}_${sub}_${q}_d_${dIdx}`]);
+
+        // Guruh/sana va guruh/sana/dars turi bo‘yicha biriktirishlar.
+        if (Number.isInteger(gi) && gi >= 0) {
+            addTeacher(dt[groupDateTeacherKey(cls, sub, q, dIdx, gi)]);
+            const types = getLessonTypesForColumn(cls, sub, q, dIdx, gi) || [];
+            types.forEach(type => addTeacher(dt[groupDateTeacherKey(cls, sub, q, dIdx, gi, type)]));
+        } else {
+            // Umumiy ustunda barcha guruhga tegishli biriktirishlarni ham tekshiramiz.
+            groups.forEach((group, groupIndex) => {
+                if (!group) return;
+                addTeacher(dt[groupDateTeacherKey(cls, sub, q, dIdx, groupIndex)]);
+                (getLessonTypesForColumn(cls, sub, q, dIdx, groupIndex) || []).forEach(type =>
+                    addTeacher(dt[groupDateTeacherKey(cls, sub, q, dIdx, groupIndex, type)])
+                );
+            });
+        }
+
+        // Biriktirishlardan hech bo‘lmaganda bittasi kirgan ustozga mos bo‘lishi kerak.
+        return assignedTeachers.some(matchesCurrent);
     }
 
     window.openLessonTypesManager = function(cls, sub, q, dIdx, dateStr, lessonIdx, groupIdx) {
