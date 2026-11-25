@@ -220,6 +220,8 @@
     .s-name { text-align: left; position: sticky; left: 0; background: white; z-index: 5; font-weight: 600; min-width: 180px; }
     .gi { width: 35px; height: 32px; text-align: center; border: 1px solid #cbd5e1; border-radius: 5px; font-weight: bold; outline: none; }
     .locked { cursor: not-allowed !important; pointer-events: none !important; border: 1px solid #d1d5db !important; opacity: 0.85 !important; user-select: none !important; background-color: #f3f4f6 !important; color: #9ca3af !important; }
+    /* Qulflangan jurnal baholari ham o‘z rangida ravshan ko‘rinadi. */
+    .gi.locked { opacity: 0.74 !important; filter: none !important; box-shadow: none !important; }
     .is-today-cell { border-left: 3px solid var(--p) !important; border-right: 3px solid var(--p) !important; }
     td.is-today-cell:has(> .gi:not(.has-value):not(.locked)) { background-color: var(--today) !important; }
     .focus-mode-on table { opacity: 0.4; }
@@ -642,6 +644,17 @@
             <button class="tab-btn" style="background:#9333ea;color:white;border:0;" onclick="teacherAuditExport('exportGradeAuditPPTX')">🟣 PowerPoint</button>
         </div>
         <div id="teacher-grade-audit-info" style="font-size:13px;color:#475569;margin-bottom:9px;"></div>
+        <div id="teacher-grade-audit-filters" style="display:flex;gap:8px;flex-wrap:wrap;padding:10px;background:#eef2ff;border:1px solid #c7d2fe;border-radius:10px;margin-bottom:10px;">
+            <select id="teacher-audit-class" class="gi" style="min-width:120px;flex:1;height:38px;"><option value="">Barcha sinflar</option></select>
+            <select id="teacher-audit-subject" class="gi" style="min-width:130px;flex:1;height:38px;"><option value="">Barcha fanlar</option></select>
+            <select id="teacher-audit-group" class="gi" style="min-width:120px;flex:1;height:38px;"><option value="">Barcha guruhlar</option></select>
+            <select id="teacher-audit-student" class="gi" style="min-width:140px;flex:1;height:38px;"><option value="">Barcha o‘quvchilar</option></select>
+            <select id="teacher-audit-action" class="gi" style="min-width:130px;flex:1;height:38px;"><option value="">Barcha amallar</option><option value="Qo‘yildi">Qo‘yildi</option><option value="O‘zgartirildi">O‘zgartirildi</option><option value="O‘chirildi">O‘chirildi</option></select>
+            <select id="teacher-audit-lesson-type" class="gi" style="min-width:130px;flex:1;height:38px;"><option value="">Barcha dars turlari</option></select>
+            <label style="font-size:12px;display:flex;align-items:center;gap:5px;">Dan: <input type="date" id="teacher-audit-from" class="gi" style="height:36px;"></label>
+            <label style="font-size:12px;display:flex;align-items:center;gap:5px;">Gacha: <input type="date" id="teacher-audit-to" class="gi" style="height:36px;"></label>
+            <button type="button" class="tab-btn" onclick="resetTeacherGradeAuditFilters()" style="height:36px;">↺ Filtrlarni tozalash</button>
+        </div>
         <div id="teacher-grade-audit-results" class="teacher-audit-table-wrap">
             <div style="padding:18px;text-align:center;color:#64748b;">Baholar tarixi yuklanmoqda...</div>
         </div>
@@ -3033,17 +3046,56 @@
         const modal = document.getElementById('teacher-grade-audit-modal');
         if (modal) modal.style.display = 'none';
     };
+    window.resetTeacherGradeAuditFilters = function() {
+        ['teacher-audit-class','teacher-audit-subject','teacher-audit-group','teacher-audit-student','teacher-audit-action','teacher-audit-lesson-type','teacher-audit-from','teacher-audit-to'].forEach(id=>{const e=document.getElementById(id);if(e)e.value='';});
+        renderTeacherGradeAudit();
+    };
     window.renderTeacherGradeAudit = function() {
         const el = document.getElementById('teacher-grade-audit-results');
         const info = document.getElementById('teacher-grade-audit-info');
         if (!el) return;
         const previous = window.__teacherAuditOnly;
         window.__teacherAuditOnly = true;
-        const rows = getGradeAuditRows();
+        let rows = getGradeAuditRows();
         window.__teacherAuditOnly = previous;
-        if (info) info.textContent = 'Sizga tegishli jami ' + rows.length + ' ta baho amali. Boshqa o‘qituvchilarning yozuvlari bu oynaga kiritilmaydi.';
+        const ownTeacher = String(teacher || localStorage.getItem('loggedTeacher') || '').trim().toLocaleLowerCase('uz');
+        // Filtr variantlari faqat tizimga kirgan o‘qituvchining yozuvlaridan olinadi.
+        const classSel=document.getElementById('teacher-audit-class');
+        const selectedClass=classSel?.value||'';
+        const scoped=selectedClass?rows.filter(x=>String(x.className||'').toLowerCase()===selectedClass.toLowerCase()):rows;
+        const fill=(id,values,placeholder)=>{
+            const sel=document.getElementById(id); if(!sel)return;
+            const old=sel.value;
+            const vals=[...new Set(values.map(v=>String(v||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'uz'));
+            sel.innerHTML=`<option value="">${placeholder}</option>`+vals.map(v=>`<option value="${hEsc(v)}">${hEsc(v)}</option>`).join('');
+            if(vals.includes(old))sel.value=old;
+        };
+        fill('teacher-audit-class',rows.map(x=>x.className),'Barcha sinflar');
+        fill('teacher-audit-subject',scoped.map(x=>x.subject),'Barcha fanlar');
+        fill('teacher-audit-group',scoped.map(x=>x.group),'Barcha guruhlar');
+        fill('teacher-audit-student',scoped.map(x=>x.student),'Barcha o‘quvchilar');
+        fill('teacher-audit-lesson-type',scoped.map(x=>x.lessonType),'Barcha dars turlari');
+        ['teacher-audit-class','teacher-audit-subject','teacher-audit-group','teacher-audit-student','teacher-audit-action','teacher-audit-lesson-type','teacher-audit-from','teacher-audit-to'].forEach(id=>{
+            const c=document.getElementById(id);if(c&&!c.dataset.teacherAuditBound){c.dataset.teacherAuditBound='1';c.addEventListener('change',()=>renderTeacherGradeAudit());}
+        });
+        const val=id=>(document.getElementById(id)?.value||'').trim().toLocaleLowerCase('uz');
+        const from=document.getElementById('teacher-audit-from')?.value||'';
+        const to=document.getElementById('teacher-audit-to')?.value||'';
+        rows=rows.filter(x=>{
+            const times=[...(x.placedTimes||[]),...(x.editedTimes||[]),...(x.deletedTimes||[])];
+            const inRange=t=>{const d=new Date(Number(t));if(isNaN(d.getTime()))return false;const iso=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;return (!from||iso>=from)&&(!to||iso<=to);};
+            const action=val('teacher-audit-action');
+            const actionMatch=!action||(x.actions||[]).some(a=>{const k=gradeAuditKind(a);return (action==='qo‘yildi'&&k==='placed')||(action==='o‘zgartirildi'&&k==='edited')||(action==='o‘chirildi'&&k==='deleted');});
+            return (!val('teacher-audit-class')||String(x.className||'').toLocaleLowerCase('uz')===val('teacher-audit-class'))&&
+                (!val('teacher-audit-subject')||String(x.subject||'').toLocaleLowerCase('uz')===val('teacher-audit-subject'))&&
+                (!val('teacher-audit-group')||String(x.group||'').toLocaleLowerCase('uz')===val('teacher-audit-group'))&&
+                (!val('teacher-audit-student')||String(x.student||'').toLocaleLowerCase('uz')===val('teacher-audit-student'))&&
+                (!val('teacher-audit-lesson-type')||String(x.lessonType||'').toLocaleLowerCase('uz')===val('teacher-audit-lesson-type'))&&actionMatch&&
+                ((!from&&!to)||times.some(inRange));
+        });
+        if (info) info.textContent = 'Sizga tegishli jami ' + rows.length + ' ta amal. Filtrlar faqat ' + (teacher||localStorage.getItem('loggedTeacher')||'kirgan o‘qituvchi') + ' yozuvlariga qo‘llanadi; boshqa o‘qituvchilar ma’lumotlari ko‘rsatilmaydi.';
         if (!rows.length) {
-            el.innerHTML = '<div style="padding:22px;text-align:center;color:#64748b;">Hozircha sizga tegishli baholar tarixi topilmadi.</div>';
+            el.innerHTML = '<div style="padding:22px;text-align:center;color:#64748b;">Tanlangan filtrlar bo‘yicha sizga tegishli baholar tarixi topilmadi. Filtrlarni tozalab qayta qidiring.</div>';
             return;
         }
         const headers = ['🟢 QO‘YILGAN VAQT','🔵 TAHRIRLANGAN VAQT','🔴 O‘CHIRILGAN VAQT','AMAL TURI','SINF','FAN','GURUH','O‘QUVCHI','DARS SANASI','DARS TURI','ESKI BAHO','YANGI BAHO'];
@@ -3671,7 +3723,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                     : (dtT[`${cls}_${col.l.name}_${qForDate}_d_${col.dIdx}`] || '');
                 const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, col.l.name, col.l, entry.name);
                 const ro = !hasA || dLocked || cellLocked;
-                h += `<td class="${isToday?'is-today-cell':''}"><input type="text" class="gi ${val?'has-value':''} ${ro?'locked':''}" style="${ro?'':getGradeStyle(val)}" value="${hEsc(val)}" ${ro?'disabled':''} onchange="saveM('${jEsc(qForDate)}','${jEsc(cls)}','${jEsc(col.l.name)}','${jEsc(entry.key)}',${col.dIdx},this.value${col.ltShort?`, '${jEsc(col.ltShort)}'`:''},${col.groupIdx})"></td>`;
+                h += `<td class="${isToday?'is-today-cell':''}"><input type="text" class="gi ${val?'has-value':''} ${ro?'locked':''}" style="${getGradeStyle(val)}" value="${hEsc(val)}" ${ro?'disabled':''} onchange="saveM('${jEsc(qForDate)}','${jEsc(cls)}','${jEsc(col.l.name)}','${jEsc(entry.key)}',${col.dIdx},this.value${col.ltShort?`, '${jEsc(col.ltShort)}'`:''},${col.groupIdx})"></td>`;
             });
             h += `</tr>`;
         });
@@ -3752,7 +3804,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 const st = selectedGroupIdx >= 0 ? getDateTeacherForLessonType(dtT,cls,l.name,qForDate,dIdx,selectedGroupIdx,ltShort) : (dtT[`${cls}_${l.name}_${qForDate}_d_${dIdx}`] || '');
                 const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, l.name, l, studentName);
                 const ro = !hasA || dLocked || cellLocked;
-                const styleAttr = ro ? '' : getGradeStyle(val);
+                const styleAttr = getGradeStyle(val);
                 const hv = val ? 'has-value' : '';
                 const ltArg = ltShort ? `,'${jEsc(ltShort)}'` : '';
                 h += `<td class="${isToday?'is-today-cell':''}" style="position:relative;"><input type="text" class="gi ${hv} ${ro?'locked':''}" style="${styleAttr}" value="${hEsc(val)}" ${ro?'disabled':''} onchange="saveM('${jEsc(qForDate)}','${jEsc(cls)}','${jEsc(l.name)}','${jEsc(studentKey)}',${dIdx},this.value${ltArg},${useGroupIdx})"></td>`;
@@ -3962,7 +4014,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                     const st = getDateTeacherForLessonType(dtTeachersAll,cls,sub,activeQuarter,col.dIdx,col.groupIdx,col.ltShort);
                     const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, entry.name);
                     const ro = !hasA || dLocked || cLocked;
-                    const styleAttr = ro ? '' : getGradeStyle(val);
+                    const styleAttr = getGradeStyle(val);
                     const ltArg = col.ltShort ? `,'${jEsc(col.ltShort)}'` : '';
                     combined += `<td class="${col.d.date===todayAll?'is-today-cell ':''}${col.ltShort?'lt-col-cell':''}"><input type="text" class="gi ${val?'has-value':''} ${ro?'locked':''}" style="${styleAttr}" value="${hEsc(val)}" ${ro?'disabled':''} onchange="saveM('${jEsc(activeQuarter)}','${jEsc(cls)}','${jEsc(sub)}','${jEsc(studentKey)}',${col.dIdx},this.value${ltArg},${col.groupIdx})"></td>`;
                 });
@@ -3972,7 +4024,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 const qt = dtTeachersAll[`${cls}_${sub}_${activeQuarter}_quarter`] || '';
                 const hasQ = qt ? checkAccess(qt) : isAllowedForStudent(cls, sub, subObj, entry.name);
                 const roQ = !hasQ || qLocked;
-                combined += `<td class="avg-cell">${avg}</td><td><input type="text" class="gi ${qVal?'has-value':''} ${roQ?'locked':''}" style="${roQ?'':getGradeStyle(qVal)}" value="${hEsc(qVal)}" ${roQ?'disabled':''} onchange="saveMQ('${jEsc(activeQuarter)}','${jEsc(cls)}','${jEsc(sub)}','${jEsc(studentKey)}',this.value)"></td></tr>`;
+                combined += `<td class="avg-cell">${avg}</td><td><input type="text" class="gi ${qVal?'has-value':''} ${roQ?'locked':''}" style="${getGradeStyle(qVal)}" value="${hEsc(qVal)}" ${roQ?'disabled':''} onchange="saveMQ('${jEsc(activeQuarter)}','${jEsc(cls)}','${jEsc(sub)}','${jEsc(studentKey)}',this.value)"></td></tr>`;
             });
             return combined + `</tbody></table>`;
         }
@@ -4022,7 +4074,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 const st = selectedGroupIdx >= 0 ? getDateTeacherForLessonType(dtT,cls,sub,activeQuarter,col.dIdx,selectedGroupIdx,col.ltShort) : (dtT[`${cls}_${sub}_${activeQuarter}_d_${col.dIdx}`] || '');
                 const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, studentName);
                 const ro = !hasA || dLocked || cLocked;
-                const styleAttr = ro ? '' : getGradeStyle(val);
+                const styleAttr = getGradeStyle(val);
                 const hv = val ? 'has-value' : '';
                 const ltArg = col.ltShort ? `,'${jEsc(col.ltShort)}'` : '';
                 const tdClass = (col.d.date===today?'is-today-cell ':'') + (col.ltShort ? 'lt-col-cell' : '');
@@ -4034,7 +4086,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
             const qt = dtT[`${cls}_${sub}_${activeQuarter}_quarter`] || '';
             const hasQ = qt ? checkAccess(qt) : isAllowedForStudent(cls, sub, subObj, studentName);
             const roQ = !hasQ || qLocked;
-            const qStyle = roQ ? '' : getGradeStyle(qVal);
+            const qStyle = getGradeStyle(qVal);
             const qHv = qVal ? 'has-value' : '';
             h += `<td class="avg-cell">${avg}</td><td><input type="text" class="gi ${qHv} ${roQ?'locked':''}" style="${qStyle}" value="${hEsc(qVal)}" ${roQ?'disabled':''} onchange="saveMQ('${jEsc(activeQuarter)}','${jEsc(cls)}','${jEsc(sub)}','${jEsc(studentKey)}',this.value)"></td></tr>`;
         });
