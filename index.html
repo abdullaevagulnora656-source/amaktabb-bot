@@ -198,6 +198,12 @@
         if (data) { setLS('admins_list', data); fireRefresh(); }
         else setLS('admins_list', []); fireRefresh();
     });
+    onValue(ref(db, 'employees_list/'), (snap) => {
+        const data = snap.val();
+        setLS('employees_list', data || []);
+        if (typeof window.renderEmployeesList === 'function') window.renderEmployeesList();
+        fireRefresh();
+    });
 
     window.__fbWriter = (fullPath, data) => set(ref(db, fullPath), data);
     window.__fbReady = true;
@@ -360,7 +366,7 @@
     .teacher-audit-overlay { display:none;position:fixed;inset:0;z-index:12000;background:rgba(15,23,42,.72);padding:12px;overflow:auto; }
     .teacher-audit-box { max-width:1250px;margin:18px auto;background:#fff;border-radius:16px;padding:16px;box-shadow:0 15px 50px rgba(0,0,0,.25); }
     .teacher-audit-head { display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;border-bottom:2px solid #ede9fe;padding-bottom:12px;margin-bottom:12px; }
-    .teacher-audit-table-wrap { overflow:auto;max-height:65vh;border:1px solid #e2e8f0;border-radius:9px; }
+    .teacher-audit-table-wrap { overflow-x:auto;overflow-y:visible;max-height:none;height:auto;border:1px solid #e2e8f0;border-radius:9px; }
     @media(max-width:640px){.teacher-audit-box{padding:10px;margin:4px auto}.teacher-audit-overlay{padding:6px}}
 
     .stu-card { background: #fff; border-radius: 14px; padding: 16px; box-shadow: 0 3px 14px rgba(0,0,0,.05); margin-bottom: 14px; }
@@ -550,18 +556,11 @@
 
 <div id="login-screen" style="text-align:center; margin-top:80px;">
     <h2 style="color:var(--p); margin-bottom:20px;">Maktab Tizimi</h2>
-    <div style="display:inline-flex; gap:10px; margin-bottom:20px;">
-        <button id="lt-teacher" class="login-tab-btn active" onclick="switchLoginTab('teacher')">👨‍🏫 Ustoz</button>
-        <button id="lt-student" class="login-tab-btn" onclick="switchLoginTab('student')">👤 O'quvchi</button>
-    </div>
-    <div id="teacher-login-form">
-        <input type="text" id="t-name-input" class="gi" style="width:250px; height:45px; font-size: 16px; margin-bottom: 10px; font-weight:normal;" placeholder="Ismingizni kiriting..."> <br>
+    <div id="unified-login-form">
+        <div style="font-size:13px;color:#64748b;margin-bottom:10px;">Xodim yoki o‘quvchi login-paroli orqali kiring</div>
+        <input type="text" id="t-name-input" class="gi" style="width:250px; height:45px; font-size: 16px; margin-bottom: 10px; font-weight:normal;" placeholder="Login..." autocomplete="username"> <br>
+        <input type="password" id="t-pass-input" class="gi" style="width:250px; height:45px; font-size: 16px; margin-bottom: 10px; font-weight:normal;" placeholder="Parol..." autocomplete="current-password"> <br>
         <button onclick="login()" class="tab-btn active" style="width: 250px;">Kirish</button>
-    </div>
-    <div id="student-login-form" style="display:none;">
-        <input type="text" id="st-login-input" class="gi" style="width:250px; height:45px; font-size: 16px; margin-bottom: 10px; font-weight:normal;" placeholder="Login..."> <br>
-        <input type="password" id="st-pass-input" class="gi" style="width:250px; height:45px; font-size: 16px; margin-bottom: 10px; font-weight:normal;" placeholder="Parol..."> <br>
-        <button onclick="studentLogin()" class="tab-btn active" style="width: 250px;">Kirish</button>
     </div>
 </div>
 
@@ -875,10 +874,10 @@
                 <div style="background:#f3e8ff; border:1px solid #d8b4fe; padding:15px; border-radius:10px; margin-bottom:20px;">
                     <h3 style="margin-top:0; color:#6b21a8;">👑 Adminlar boshqaruvi</h3>
                     <div style="display:flex; gap:10px; margin-bottom:12px; flex-wrap:wrap; align-items:flex-start;">
-                        <input type="text" id="new-admin-name" class="gi" style="width:180px; height:38px; text-align:left; font-weight:normal;" placeholder="Admin ismi (F.I.Sh)">
+                        <input type="text" id="new-admin-employee-number" class="gi" style="width:105px;height:38px;text-align:left;font-weight:normal;" placeholder="Xodim №"><input type="text" id="new-admin-name" class="gi" style="width:180px; height:38px; text-align:left; font-weight:normal;" placeholder="Admin ismi (F.I.Sh)">
                         <div style="flex:1; min-width:150px;">
                             <div style="font-size:10px; font-weight:bold; color:#6b21a8; margin-bottom:2px;">Sinflar (Ctrl bilan tanlang)</div>
-                            <select id="new-admin-classes" class="gi" style="width:100%; height:60px; text-align:left; font-weight:normal;" multiple></select>
+                            <select id="new-admin-classes" class="gi" style="width:100%; height:60px; text-align:left; font-weight:normal;" multiple onchange="renderAdminScopeOptions()"></select>
                         </div>
                         <div style="flex:1; min-width:150px;">
                             <div style="font-size:10px; font-weight:bold; color:#6b21a8; margin-bottom:2px;">Fanlar (Ctrl bilan tanlang)</div>
@@ -896,9 +895,35 @@
                             <div style="font-size:10px; font-weight:bold; color:#6b21a8; margin-bottom:2px;">Dars turlari</div>
                             <select id="new-admin-lessontypes" class="gi" style="width:100%; height:60px; text-align:left; font-weight:normal;" multiple></select>
                         </div>
-                        <button class="tab-btn" style="background:#8b5cf6; color:white; border:none; height:60px; margin-top:12px;" onclick="addAdmin()">➕ Qo'shish</button>
+                        <div style="display:flex;flex-direction:column;gap:5px;margin-top:12px;">
+                            <button class="tab-btn" style="background:#0f766e;color:white;border:none;height:27px;font-size:11px;" onclick="selectAllAdminPermissions()">☑ Barchasi</button>
+                            <button class="tab-btn" style="background:#8b5cf6;color:white;border:none;height:27px;font-size:11px;" onclick="addAdmin()">➕ Qo'shish</button>
+                        </div>
                     </div>
                     <div id="admins-list-container" style="background:white; border:1px solid #e2e8f0; border-radius:6px; padding:10px; max-height:300px; overflow-y:auto;"></div>
+                </div>
+
+                <div style="background:#ecfdf5;border:1px solid #a7f3d0;padding:15px;border-radius:10px;margin-bottom:20px;">
+                    <h3 style="margin-top:0;color:#047857;">👥 Xodimlar boshqaruvi</h3>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px;">
+                        <input id="new-employee-name" class="gi" style="width:190px;height:38px;text-align:left;font-weight:normal;" placeholder="Ism familiya">
+                        <input id="new-employee-login" class="gi" style="width:145px;height:38px;text-align:left;font-weight:normal;" placeholder="Login">
+                        <input id="new-employee-pass" type="text" class="gi" style="width:145px;height:38px;text-align:left;font-weight:normal;" placeholder="Parol">
+                        <button class="tab-btn" style="background:#059669;color:white;border:0;height:38px;" onclick="addEmployee()">➕ Xodim qo‘shish</button>
+                    </div>
+                    <div style="font-size:12px;color:#065f46;margin-bottom:8px;">Xodim tartib raqami avtomatik beriladi. Sinf, fan, guruh yoki sana biriktirish joyiga shu raqamni yozing.</div>
+                    <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:10px;margin-bottom:10px;">
+                        <b style="display:block;color:#166534;font-size:13px;margin-bottom:7px;">🔎 Xodimni qidirish</b>
+                        <div style="display:flex;gap:7px;flex-wrap:wrap;align-items:center;">
+                            <input id="employee-search-number" class="gi" style="width:105px;height:36px;text-align:left;font-weight:normal;" placeholder="Tartib №" onkeydown="if(event.key==='Enter')searchEmployees()">
+                            <input id="employee-search-login" class="gi" style="width:140px;height:36px;text-align:left;font-weight:normal;" placeholder="Login" onkeydown="if(event.key==='Enter')searchEmployees()">
+                            <input id="employee-search-password" class="gi" style="width:140px;height:36px;text-align:left;font-weight:normal;" placeholder="Parol" onkeydown="if(event.key==='Enter')searchEmployees()">
+                            <button class="tab-btn" style="background:#047857;color:white;border:0;height:36px;" onclick="searchEmployees()">🔍 Qidirish</button>
+                            <button class="tab-btn" style="background:#e2e8f0;color:#334155;border:0;height:36px;" onclick="clearEmployeeSearch()">Tozalash</button>
+                        </div>
+                        <div id="employee-search-results" style="margin-top:8px;font-size:12px;"></div>
+                    </div>
+                    <div id="employees-list-container" style="background:white;border:1px solid #a7f3d0;border-radius:6px;padding:10px;max-height:300px;overflow-y:auto;"></div>
                 </div>
 
                 <div style="background:#f0f7ff; border:1px solid #b6d4fe; padding:15px; border-radius:10px; margin-bottom:20px;">
@@ -959,7 +984,7 @@
                             <label style="font-size:12px;font-weight:700;">Guruh<select id="assign-teacher-group" class="gi" style="width:100%;height:38px;display:block;" onchange="loadDateTeacherAssignDates()"></select></label>
                             <label style="font-size:12px;font-weight:700;">Sana<select id="assign-teacher-date" class="gi" style="width:100%;height:38px;display:block;" onchange="loadDateTeacherAssignLessonTypes()"></select></label>
                             <label style="font-size:12px;font-weight:700;">Dars turi<select id="assign-teacher-lesson-type" class="gi" style="width:100%;height:38px;display:block;" onchange="renderDateTeacherAssignments()"></select></label>
-                            <label style="font-size:12px;font-weight:700;">Ustoz F.I.Sh<input id="assign-teacher-name" type="text" class="gi" style="width:100%;height:38px;display:block;box-sizing:border-box;text-align:left;" placeholder="Ustoz ismini kiriting"></label>
+                            <label style="font-size:12px;font-weight:700;">Ustoz F.I.Sh<input id="assign-teacher-name" type="text" class="gi" style="width:100%;height:38px;display:block;box-sizing:border-box;text-align:left;" placeholder="Xodim № yoki F.I.Sh"></label>
                             <button class="tab-btn" style="width:100%;background:#2563eb;color:white;border:0;height:40px;" onclick="saveDateTeacherAssignment()">💾 Biriktirish</button>
                         </div>
                         <div id="date-teacher-assignments-list" style="margin-top:10px;background:white;border:1px solid #dbeafe;border-radius:7px;padding:8px;width:100%;box-sizing:border-box;"></div>
@@ -1313,6 +1338,7 @@
     window.syncRoomsToFirebase         = (data)         => fbWrite('rooms/', data);
     window.syncClassShiftsToFirebase   = (data)         => fbWrite('class_shifts/', data);
     window.syncAdminsListToFirebase    = (data)         => fbWrite('admins_list/', data);
+    window.syncEmployeesToFirebase     = (data)         => fbWrite('employees_list/', data);
     window.syncGradeAuditToFirebase    = (data)         => fbWrite('grade_audit/', data);
 
     const DEFAULT_BELL_MORNING = [
@@ -1981,41 +2007,60 @@
         if (typeof window.renderClassShiftsUI === 'function') window.renderClassShiftsUI();
     };
 
-    function switchLoginTab(which) {
-        const isT = which === 'teacher';
-        document.getElementById('lt-teacher').classList.toggle('active', isT);
-        document.getElementById('lt-student').classList.toggle('active', !isT);
-        document.getElementById('teacher-login-form').style.display = isT ? 'block' : 'none';
-        document.getElementById('student-login-form').style.display = isT ? 'none' : 'block';
-    }
+    function switchLoginTab(which) { /* yagona kirish oynasi */ }
     function login() {
-        const v = document.getElementById('t-name-input').value.trim();
-        if (!v) return alert("Ismingizni kiriting!");
-        teacher = v; localStorage.setItem('loggedTeacher', teacher);
-        localStorage.removeItem('loggedStudent');
-        loggedStudent = null;
-        showMain();
-    }
-    window.studentLogin = function() {
-        const lg = document.getElementById('st-login-input').value.trim();
-        const pw = document.getElementById('st-pass-input').value;
-        if (!lg || !pw) return alert("To'ldiring!");
+        const loginValue = document.getElementById('t-name-input').value.trim();
+        const password = document.getElementById('t-pass-input')?.value || '';
+        if (!loginValue || !password) return alert("Login va parolni kiriting!");
+
+        // Xodim va o‘quvchi faqat login VA parol juftligi ikkalasi ham aynan bir xil bo‘lsa to‘qnashadi.
+        const employees = lsGet('employees_list', []) || [];
+        const studentAccountsForLogin = lsGet('student_accounts', {}) || {};
+        for (const c in studentAccountsForLogin) for (const n in (studentAccountsForLogin[c] || {})) {
+            const a=studentAccountsForLogin[c][n]; if(!a) continue;
+            const sameLogin=String(a.login||'').trim().toLowerCase()===loginValue.toLowerCase();
+            const samePassword=String(a.password||'').trim()===String(password).trim();
+            if(employees.some(e=>sameLogin && samePassword && String(e.login||'').trim().toLowerCase()===loginValue.toLowerCase() && String(e.password||'').trim()===String(password).trim()))
+                return alert('Bu login va parol juftligi xodim hamda o‘quvchida bir xil. Kirish amalga oshmadi. Login yoki paroldan bittasini o‘zgartiring.');
+        }
+        const employee = employees.find(e => String(e.login || '').trim().toLowerCase() === loginValue.toLowerCase() && String(e.password || '') === password);
+        if (employee) {
+            teacher = String(employee.name || '').trim();
+            localStorage.setItem('loggedTeacher', teacher);
+            localStorage.setItem('loggedEmployeeId', String(employee.number || employee.id || ''));
+            localStorage.removeItem('loggedStudent');
+            loggedStudent = null;
+            showMain();
+            return;
+        }
+
+        // Xodim topilmasa, shu oynada o‘quvchi akkaunti tekshiriladi.
         const all = lsGet('student_accounts', {});
         let found = null;
         for (const c in all) {
             const clsObj = all[c]; if (!clsObj || typeof clsObj !== 'object') continue;
             for (const n in clsObj) {
                 const a = clsObj[n];
-                if (a && a.login === lg && a.password === pw) { found = { cls: c, name: n, subjects: Array.isArray(a.subjects) ? a.subjects : [] }; break; }
+                if (a && String(a.login || '') === loginValue && String(a.password || '') === password) {
+                    found = { cls: c, name: n, subjects: Array.isArray(a.subjects) ? a.subjects : [] };
+                    break;
+                }
             }
             if (found) break;
         }
-        if (!found) return alert("Login yoki parol noto'g'ri!");
-        loggedStudent = found; localStorage.setItem('loggedStudent', JSON.stringify(found));
-        localStorage.removeItem('loggedTeacher'); teacher = "";
-        showStudentView();
-    };
-    function logout() { localStorage.removeItem('loggedTeacher'); location.reload(); }
+        if (found) {
+            loggedStudent = found;
+            localStorage.setItem('loggedStudent', JSON.stringify(found));
+            localStorage.removeItem('loggedTeacher');
+            localStorage.removeItem('loggedEmployeeId');
+            teacher = "";
+            showStudentView();
+            return;
+        }
+        alert("Login yoki parol noto‘g‘ri!");
+    }
+    window.studentLogin = login;
+    function logout() { localStorage.removeItem('loggedTeacher'); localStorage.removeItem('loggedEmployeeId'); location.reload(); }
     window.studentLogout = function() { localStorage.removeItem('loggedStudent'); location.reload(); };
 
     document.addEventListener("DOMContentLoaded", () => {
@@ -2068,7 +2113,8 @@
         document.getElementById('login-screen').style.display = 'none';
         document.getElementById('student-content').style.display = 'none';
         document.getElementById('main-content').style.display = 'block';
-        document.getElementById('t-welcome').innerText = "👨‍🏫 " + teacher;
+        const empId = localStorage.getItem('loggedEmployeeId');
+        document.getElementById('t-welcome').innerText = "👨‍💼 " + teacher + (empId ? "  ·  Xodim №" + empId : "");
         window.reloadClassSelects();
         if (localStorage.getItem('last_selected_date')) document.getElementById('date-pick').value = localStorage.getItem('last_selected_date');
         else document.getElementById('date-pick').value = isoOfDate(new Date());
@@ -2175,6 +2221,16 @@
         if (!teacher) { body.innerHTML = '<p style="text-align:center; color:#ef4444;">Avval ustoz sifatida kiring.</p>'; return; }
 
         const tName = teacher.trim();
+        const loggedNo = String(localStorage.getItem('loggedEmployeeId') || '').trim();
+        const normGrant = value => String(value || '').trim().toLocaleLowerCase('uz');
+        const scheduleAdminGrant = getAdminsList().find(a =>
+            (loggedNo && a.employeeNumber && String(a.employeeNumber) === loggedNo) ||
+            (tName && normGrant(a.name) === normGrant(tName))
+        );
+        const grantHas = (stored, value) => {
+            const list = String(stored || '').split(',').map(normGrant).filter(Boolean);
+            return !list.length || list.includes(normGrant(value));
+        };
         const classes = getClassesList();
         const startDate = new Date(sIso + 'T00:00:00');
         const endDate = new Date(eIso + 'T00:00:00');
@@ -2239,8 +2295,43 @@
                         return !!dtT[groupDateTeacherKey(cls,l.name,q,realIdx,gi)] || types.some(lt => !!dtT[groupDateTeacherKey(cls,l.name,q,realIdx,gi,lt)]);
                     });
                     const isGroupTeacher = myGroups.length > 0;
-                    const hasFullAccess = !hasGroupAssignments && (isOverrideTeacher || isMainTeacher);
+                    let hasFullAccess = !hasGroupAssignments && (isOverrideTeacher || isMainTeacher);
                     let myLesson = allGroups.length ? (isGroupTeacher || (!hasGroupAssignments && (isOverrideTeacher || isMainTeacher))) : (isOverrideTeacher || isMainTeacher);
+
+                    // Admin bo‘limida xodimga berilgan sinf/fan/guruh/sana ruxsatlari
+                    // shaxsiy jadvalda ham ko‘rinadi; sana qulflangan bo‘lsa ko‘rsatilmaydi.
+                    if (scheduleAdminGrant && grantHas(scheduleAdminGrant.classes, cls) &&
+                        grantHas(scheduleAdminGrant.subjects, l.name) && grantHas(scheduleAdminGrant.dates, day.iso)) {
+                        const allowedTypes = String(scheduleAdminGrant.lessontypes || '').split(',').map(normGrant).filter(Boolean);
+                        const groupRestrictions = String(scheduleAdminGrant.groups || '').split(',').map(normGrant).filter(Boolean);
+                        const adminGroups = [];
+                        if (allGroups.length) {
+                            allGroups.forEach((g, gi) => {
+                                if (!g || (groupRestrictions.length && !groupRestrictions.includes(normGrant(g.name)))) return;
+                                const typeList = getLessonTypesForColumn(cls, l.name, q, realIdx, gi);
+                                const visibleTypes = (typeList.length ? typeList : ['']).filter(lt => !allowedTypes.length || allowedTypes.includes(normGrant(lt)));
+                                if (allowedTypes.length && !visibleTypes.length) return;
+                                const access = getEmployeeJournalGrant(cls, l.name, gi, day.iso);
+                                if (!access.allowed) return;
+                                adminGroups.push({ name:g.name || ('Guruh '+(gi+1)), idx:gi, lessonTypes:visibleTypes.filter(Boolean) });
+                            });
+                            if (groupRestrictions.length) {
+                                myGroups.splice(0, myGroups.length, ...adminGroups);
+                                hasFullAccess = false;
+                                myLesson = adminGroups.length > 0;
+                            } else {
+                                const fullAccess = getEmployeeJournalGrant(cls, l.name, -1, day.iso);
+                                if (fullAccess.allowed) {
+                                    myGroups.splice(0, myGroups.length, ...adminGroups);
+                                    hasFullAccess = true;
+                                    myLesson = true;
+                                }
+                            }
+                        } else {
+                            const fullAccess = getEmployeeJournalGrant(cls, l.name, -1, day.iso);
+                            if (fullAccess.allowed) { hasFullAccess = true; myLesson = true; }
+                        }
+                    }
                     if (!myLesson) return;
 
                     const slot = idx + 1;
@@ -2344,8 +2435,49 @@
         </div>` + html;
     };
 
+    function getEmployeeJournalGrant(cls, sub, groupIdx, dateIso) {
+        const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
+        const empNo = String(localStorage.getItem('loggedEmployeeId') || '').trim();
+        const norm = value => String(value || '').trim().toLocaleLowerCase('uz');
+        const grant = getAdminsList().find(a =>
+            (empNo && a.employeeNumber && String(a.employeeNumber) === empNo) ||
+            (current && norm(a.name) === norm(current))
+        );
+        if (!grant) return { found:false, allowed:true };
+        const matches = (stored, value) => {
+            const values = String(stored || '').split(',').map(norm).filter(Boolean);
+            return !values.length || values.includes(norm(value));
+        };
+        const groupList = lsGet(`groups_${cls}_${sub}`, []) || [];
+        const gi = groupIdx === null || groupIdx === undefined || groupIdx === '' ? -1 : Number(groupIdx);
+        const groupName = gi >= 0 && groupList[gi] ? groupList[gi].name : '';
+        const scopeOK = matches(grant.classes, cls) && matches(grant.subjects, sub) &&
+            matches(grant.groups, groupName) && matches(grant.dates, dateIso || '');
+        if (!scopeOK) return { found:true, allowed:false, reason:'Sizga bu sinf, fan, guruh yoki sana uchun jurnalga kirish ruxsati berilmagan.' };
+
+        // Admin ruxsati qulflangan sanani ochib bermaydi.
+        if (dateIso) {
+            const locks = (lsGet('lock_settings', {}) || {})[cls] || {};
+            let locked = false;
+            for (const q of getQuarters()) {
+                if (!q || !q.start || !q.id) continue;
+                const start = new Date(q.start + 'T00:00:00');
+                const target = new Date(dateIso + 'T00:00:00');
+                const idx = Math.round((target - start) / 86400000);
+                if (idx >= 0 && idx < 200) {
+                    if (isDateLocked(locks, sub, q.id, idx, gi)) locked = true;
+                    break;
+                }
+            }
+            if (locked) return { found:true, allowed:false, reason:'Bu sana jurnalda qulflangan. Admin ruxsati ham qulflangan sanani ochmaydi.' };
+        }
+        return { found:true, allowed:true };
+    }
+
     window.gotoJournal = function(cls, sub, groupIdx, dateIso) {
         try {
+            const access = getEmployeeJournalGrant(cls, sub, groupIdx, dateIso);
+            if (!access.allowed) { alert(access.reason); return; }
             if (typeof closeTeacherSchedule === 'function') closeTeacherSchedule();
             const cSel = document.getElementById('c-select');
             if (!cSel) return;
@@ -2878,7 +3010,7 @@
                 <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:6px;">
                     <span style="font-weight:bold; min-width:150px; font-size:13px;">${i+1}. ${hEsc(name)}${badge}</span>
                     <input type="text" class="gi" style="width:130px; height:32px; font-size:12px; font-weight:normal; text-align:left;" placeholder="Login" value="${hEsc(acc.login||'')}" onchange="setStudentLogin('${jEsc(name)}', this.value)">
-                    <input type="text" class="gi" style="width:130px; height:32px; font-size:12px; font-weight:normal; text-align:left;" placeholder="Parol" value="${hEsc(acc.password||'')}" onchange="setStudentPassword('${jEsc(name)}', this.value)">
+                    <input type="text" class="gi" style="width:130px; height:32px; font-size:12px; font-weight:normal; text-align:left;" placeholder="Parol" value="${hEsc(acc.password||'')}" onchange="setStudentPassword('${jEsc(name)}', this.value, this)">
                 </div>
                 <div style="font-size:11px; color:#64748b; font-weight:bold; margin-bottom:4px;">Fanlar:</div>
                 <div>${subChecks}</div>
@@ -2886,20 +3018,64 @@
         });
         cont.innerHTML = html;
     };
+    function allStudentLoginOwners(excludeClass, excludeName) {
+        const all = getStudentAccounts(); const out = [];
+        for (const c in all) for (const n in (all[c] || {})) {
+            const a = all[c][n];
+            if (a && (a.login || a.password) && !(c === excludeClass && n === excludeName)) out.push({login:String(a.login||'').trim(), password:String(a.password||'').trim(), type:'o‘quvchi'});
+        }
+        return out;
+    }
+    function allCredentialOwners(excludeClass, excludeName, excludeEmployeeIndex) {
+        const out = allStudentLoginOwners(excludeClass, excludeName);
+        getEmployeesList().forEach((e,i)=>{ if(i!==excludeEmployeeIndex) out.push({login:String(e.login||'').trim(), password:String(e.password||'').trim(), type:'xodim'}); });
+        return out;
+    }
+    function suggestFreePassword(base, excludeClass, excludeName, excludeEmployeeIndex) {
+        const used = new Set(allCredentialOwners(excludeClass, excludeName, excludeEmployeeIndex).filter(x=>x.password).map(x=>x.password));
+        const clean = String(base||'parol').trim() || 'parol'; let candidate=clean, n=1;
+        while(used.has(candidate)) candidate=clean+n++;
+        return candidate;
+    }
+    function credentialConflict(login, password, excludeClass, excludeName, excludeEmployeeIndex) {
+        const l=String(login||'').trim().toLowerCase(), pw=String(password||'').trim();
+        return allCredentialOwners(excludeClass, excludeName, excludeEmployeeIndex).find(x=>(l && pw && x.login && x.password && x.login.toLowerCase()===l && x.password===pw));
+    }
+    function suggestFreeLogin(base, excludeClass, excludeName, excludeEmployeeIndex) {
+        const used = new Set(allStudentLoginOwners(excludeClass, excludeName).map(x=>x.login.toLowerCase()));
+        getEmployeesList().forEach((e,i)=>{ if(i!==excludeEmployeeIndex && e.login) used.add(String(e.login).trim().toLowerCase()); });
+        const clean = String(base||'foydalanuvchi').trim() || 'foydalanuvchi';
+        let candidate = clean, n = 1;
+        while (used.has(candidate.toLowerCase())) candidate = clean + n++;
+        return candidate;
+    }
+    function loginAlreadyUsed(login, excludeClass, excludeName, excludeEmployeeIndex) {
+        const key=String(login||'').trim().toLowerCase(); if(!key) return false;
+        if(allStudentLoginOwners(excludeClass,excludeName).some(x=>x.login.toLowerCase()===key)) return true;
+        return getEmployeesList().some((e,i)=>i!==excludeEmployeeIndex && String(e.login||'').trim().toLowerCase()===key);
+    }
     window.setStudentLogin = function(studentName, login) {
         login = login.trim();
         const cls = document.getElementById('acc-class-select').value;
-        const all = getStudentAccounts();
-        if (login) for (const c in all) for (const n in all[c]) if (all[c][n] && all[c][n].login === login && !(c === cls && n === studentName)) { alert("Bu login band!"); loadStudentAccountsList(); return; }
+        const all = getStudentAccounts(); const current=all[cls]?.[studentName] || {login:'',password:''};
+        if (credentialConflict(login, current.password, cls, studentName, -1)) { const suggestion=suggestFreeLogin(login,cls,studentName,-1); alert('Bu login va parol juftligi boshqa akkaunt bilan aynan bir xil. Tavsiya etiladigan login: ' + suggestion); loadStudentAccountsList(); return; }
         if (!all[cls]) all[cls] = {};
         if (!all[cls][studentName]) all[cls][studentName] = { login:'', password:'', subjects: [] };
         all[cls][studentName].login = login;
         saveStudentAccounts(all); loadStudentAccountsList();
     };
-    window.setStudentPassword = function(studentName, pass) {
-        pass = pass.trim();
+    window.setStudentPassword = function(studentName, pass, inputEl) {
+        pass = String(pass||'').trim();
         const cls = document.getElementById('acc-class-select').value;
-        const all = getStudentAccounts();
+        const all = getStudentAccounts(); const current=all[cls]?.[studentName] || {login:'',password:''};
+        if (credentialConflict(current.login, pass, cls, studentName, -1)) {
+            const suggestion=suggestFreePassword(pass, cls, studentName, -1);
+            alert('Bu login va parol juftligi boshqa akkaunt bilan aynan bir xil. Tavsiya etiladigan yangi parol: ' + suggestion);
+            if(inputEl) inputEl.value=suggestion;
+            if (!all[cls]) all[cls] = {};
+            if (!all[cls][studentName]) all[cls][studentName] = { login:'', password:'', subjects: [] };
+            all[cls][studentName].password=suggestion; saveStudentAccounts(all); loadStudentAccountsList(); return;
+        }
         if (!all[cls]) all[cls] = {};
         if (!all[cls][studentName]) all[cls][studentName] = { login:'', password:'', subjects: [] };
         all[cls][studentName].password = pass;
@@ -2917,6 +3093,20 @@
         saveStudentAccounts(all);
     };
 
+    function getEmployeesList() { return lsGet('employees_list', []) || []; }
+    function resolveEmployeeNumber(value) {
+        const raw = String(value || '').trim();
+        if (!raw) return raw;
+        return raw.split(',').map(part => {
+            part = part.trim();
+            if (/^#?\d+$/.test(part)) {
+                const n = Number(part.replace('#',''));
+                const emp = getEmployeesList().find(e => Number(e.number || e.id) === n);
+                if (emp) return emp.name;
+            }
+            return part;
+        }).filter(Boolean).join(', ');
+    }
     function getAdminsList() { return lsGet('admins_list', []); }
     function saveAdminsList(arr) { lsSet('admins_list', arr); window.syncAdminsListToFirebase(arr); }
     
@@ -3232,6 +3422,61 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         try{const pptx=new window.PptxGenJS();pptx.layout='LAYOUT_WIDE';pptx.author='Baholar tarixi';pptx.subject='Audit hisoboti';pptx.title='Baholar tarixi';const per=12,total=Math.ceil(data.length/per);for(let p=0;p<total;p++){const slide=pptx.addSlide();slide.background={color:'F8FAFC'};slide.addText('BAHOLAR TARIXI VA AUDIT HISOBOTI',{x:.3,y:.15,w:12.7,h:.35,fontSize:18,bold:true,color:'1E3A8A'});slide.addText(`Jami ${data.length} ta amal | ${p+1}/${total}-slayd`,{x:.3,y:.52,w:12.7,h:.22,fontSize:9,color:'475569'});const chunk=data.slice(p*per,(p+1)*per);const tableRows=[headers.map(h=>({text:h,options:{bold:true,color:'FFFFFF',fill:'1E3A8A',fontSize:7}})),...chunk.map((r,ri)=>r.map((v,i)=>({text:String(v??''),options:{fontSize:6,fill:i===1?auditActionColor(v).replace('#',''):(ri%2?'F1F5F9':'FFFFFF'),color:'1E293B'}})))];slide.addTable(tableRows,{x:.25,y:.85,w:12.85,h:6.25,border:{type:'solid',color:'CBD5E1',pt:.5},colW:[1.15,1.15,1.15,.8,.85,.45,.7,.65,1.05,.8,.7,.4,.4],rowH:.45,margin:.04,autoFit:false});}await pptx.writeFile({fileName:'baholar_tarixi.pptx'});}catch(e){console.error(e);alert('PowerPoint faylini yaratishda xatolik yuz berdi.');}
     };
 
+    window.renderAdminScopeOptions = function() {
+        // Sinf tanlovi o'zgarsa, fan va guruh ro'yxatini shu sinf(lar)ga mos yangilaydi.
+        const classSel = document.getElementById('new-admin-classes');
+        const subSel = document.getElementById('new-admin-subjects');
+        const grpSel = document.getElementById('new-admin-groups');
+        if (!classSel || !subSel || !grpSel) return;
+        const selectedClasses = Array.from(classSel.selectedOptions).map(o => o.value);
+        const oldSubs = new Set(Array.from(subSel.selectedOptions).map(o => o.value));
+        const oldGroups = new Set(Array.from(grpSel.selectedOptions).map(o => o.value));
+        const subjects = new Set(), groups = new Set();
+        selectedClasses.forEach(c => getClassSubjectsRaw(c).forEach(subject => {
+            if (!subject || !subject.name) return;
+            subjects.add(subject.name);
+            (lsGet(`groups_${c}_${subject.name}`, []) || []).forEach(g => { if (g && g.name) groups.add(g.name); });
+        }));
+        subSel.innerHTML = '';
+        if (!selectedClasses.length) subSel.add(new Option('Avval sinfni tanlang', ''));
+        Array.from(subjects).sort().forEach(v => { const o=new Option(v,v); o.selected=oldSubs.has(v); subSel.add(o); });
+        grpSel.innerHTML = '';
+        if (!selectedClasses.length) grpSel.add(new Option('Avval sinfni tanlang', ''));
+        Array.from(groups).sort().forEach(v => { const o=new Option(v,v); o.selected=oldGroups.has(v); grpSel.add(o); });
+    };
+
+    window.selectAllAdminPermissions = function() {
+        // Barcha sinflarni belgilash va shu sinflarga tegishli fan/guruhlarni qayta yuklash.
+        const classSel = document.getElementById('new-admin-classes');
+        if (!classSel) return;
+        if (classSel.options.length === 0) getClassesList().forEach(c => classSel.add(new Option(c, c)));
+        Array.from(classSel.options).forEach(o => { o.selected = true; });
+        window.renderAdminScopeOptions();
+
+        // Sana va dars turlari ro'yxatini to'liq shakllantirish.
+        const dateSel = document.getElementById('new-admin-dates');
+        if (dateSel && dateSel.options.length === 0) {
+            getQuarters().forEach(q => {
+                if (!q.start || !q.end) return;
+                let cur = new Date(q.start + 'T00:00:00');
+                const end = new Date(q.end + 'T00:00:00');
+                while (cur <= end) {
+                    const iso = isoOfDate(cur);
+                    dateSel.add(new Option(`${cur.getDate()}-${mon[cur.getMonth()]}`, iso));
+                    cur.setDate(cur.getDate() + 1);
+                }
+            });
+        }
+        const ltSel = document.getElementById('new-admin-lessontypes');
+        if (ltSel && ltSel.options.length === 0) getLessonTypes().forEach(t => ltSel.add(new Option(t.short + ' - ' + t.full, t.short)));
+
+        ['new-admin-subjects','new-admin-groups','new-admin-dates','new-admin-lessontypes'].forEach(id => {
+            const el = document.getElementById(id);
+            if (el) Array.from(el.options).forEach(o => { o.selected = true; });
+        });
+        alert('Barcha sinflar, ularga tegishli fanlar, guruhlar, mavjud sanalar va dars turlari belgilandi. Endi “Qo‘shish” tugmasini bosing.');
+    };
+
     function renderAdminsList() {
         const cont = document.getElementById('admins-list-container');
         if (!cont) return;
@@ -3244,23 +3489,29 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         if (classSel && classSel.options.length === 0) {
             getClassesList().forEach(c => classSel.add(new Option(c, c)));
         }
-        if (subSel && subSel.options.length === 0) {
-            const allSubs = new Set();
-            getClassesList().forEach(c => getClassSubjectsRaw(c).forEach(s => allSubs.add(s.name)));
-            Array.from(allSubs).sort().forEach(s => subSel.add(new Option(s, s)));
-        }
-        if (grpSel && grpSel.options.length === 0) {
-            const allGrps = new Set();
-            getClassesList().forEach(c => {
-                getClassSubjectsRaw(c).forEach(s => {
-                    lsGet(`groups_${c}_${s.name}`, []).forEach(g => { if(g.name) allGrps.add(g.name); });
+        // Fan va guruhlar faqat tanlangan sinf(lar)dan olinadi.
+        if (subSel && grpSel) {
+            const selectedClasses = classSel ? Array.from(classSel.selectedOptions).map(o => o.value) : [];
+            const oldSubs = new Set(Array.from(subSel.selectedOptions).map(o => o.value));
+            const oldGroups = new Set(Array.from(grpSel.selectedOptions).map(o => o.value));
+            const subjects = new Set();
+            const groups = new Set();
+            selectedClasses.forEach(c => {
+                getClassSubjectsRaw(c).forEach(subject => {
+                    if (!subject || !subject.name) return;
+                    subjects.add(subject.name);
+                    (lsGet(`groups_${c}_${subject.name}`, []) || []).forEach(g => { if (g && g.name) groups.add(g.name); });
                 });
             });
-            Array.from(allGrps).sort().forEach(g => grpSel.add(new Option(g, g)));
+            subSel.innerHTML = '';
+            if (!selectedClasses.length) subSel.add(new Option('Avval sinfni tanlang', ''));
+            Array.from(subjects).sort().forEach(v => { const o=new Option(v,v); o.selected=oldSubs.has(v); subSel.add(o); });
+            grpSel.innerHTML = '';
+            if (!selectedClasses.length) grpSel.add(new Option('Avval sinfni tanlang', ''));
+            Array.from(groups).sort().forEach(v => { const o=new Option(v,v); o.selected=oldGroups.has(v); grpSel.add(o); });
         }
         if (dateSel && dateSel.options.length === 0) {
-            const quarters = getQuarters();
-            quarters.forEach(q => {
+            getQuarters().forEach(q => {
                 if (q.start && q.end) {
                     let cur = new Date(q.start + 'T00:00:00');
                     const end = new Date(q.end + 'T00:00:00');
@@ -3286,8 +3537,10 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
             const datesStr = a.dates || '';
             const groupsStr = a.groups || '';
             const ltsStr = a.lessontypes || '';
+            const empNo = a.employeeNumber || '';
             html += `<div style="display:flex; gap:8px; align-items:center; margin-bottom:8px; border-bottom:1px solid #f1f5f9; padding-bottom:8px; flex-wrap:wrap;">
                 <span style="font-weight:bold; width:20px; font-size:12px;">${i+1}.</span>
+                <input type="text" class="gi" style="width:62px;height:32px;font-weight:normal;text-align:left;" value="${hEsc(empNo)}" onchange="updateAdmin(${i}, 'employeeNumber', this.value)" placeholder="№">
                 <input type="text" class="gi" style="width:120px; height:32px; font-weight:normal; text-align:left;" value="${hEsc(a.name||'')}" onchange="updateAdmin(${i}, 'name', this.value)" placeholder="Ism">
                 <input type="text" class="gi" style="width:100px; height:32px; font-weight:normal; text-align:left;" value="${hEsc(classesStr)}" onchange="updateAdmin(${i}, 'classes', this.value)" placeholder="Sinflar">
                 <input type="text" class="gi" style="width:100px; height:32px; font-weight:normal; text-align:left;" value="${hEsc(subjectsStr)}" onchange="updateAdmin(${i}, 'subjects', this.value)" placeholder="Fanlar">
@@ -3300,27 +3553,39 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         cont.innerHTML = html;
     }
     window.addAdmin = function() {
-        const name = document.getElementById('new-admin-name').value.trim();
-        if (!name) return alert("Admin ismini kiriting!");
-        
+        const numberRaw = document.getElementById('new-admin-employee-number').value.trim().replace(/^#/, '');
+        const employee = numberRaw ? getEmployeesList().find(e => Number(e.number || e.id) === Number(numberRaw)) : null;
+        if (numberRaw && !employee) return alert('Bunday tartib raqamli xodim topilmadi. Xodim № ni tekshiring.');
+        const name = (employee ? employee.name : document.getElementById('new-admin-name').value).trim();
+        if (!name) return alert('Xodim tartib raqamini yoki admin ism-familiyasini kiriting!');
         const classes = Array.from(document.getElementById('new-admin-classes').selectedOptions).map(o => o.value).join(',');
         const subjects = Array.from(document.getElementById('new-admin-subjects').selectedOptions).map(o => o.value).join(',');
         const groups = Array.from(document.getElementById('new-admin-groups').selectedOptions).map(o => o.value).join(',');
         const dates = Array.from(document.getElementById('new-admin-dates').selectedOptions).map(o => o.value).join(',');
         const lessontypes = Array.from(document.getElementById('new-admin-lessontypes').selectedOptions).map(o => o.value).join(',');
-
         const admins = getAdminsList();
-        admins.push({ name, classes, subjects, groups, dates, lessontypes });
+        const empNo = employee ? Number(employee.number || employee.id) : '';
+        const existing = admins.findIndex(a => (empNo && Number(a.employeeNumber) === empNo) || String(a.name||'').trim().toLocaleLowerCase('uz') === name.toLocaleLowerCase('uz'));
+        const record = { name, employeeNumber:empNo, classes, subjects, groups, dates, lessontypes };
+        if (existing >= 0) admins[existing] = {...admins[existing], ...record}; else admins.push(record);
         saveAdminsList(admins);
         document.getElementById('new-admin-name').value = '';
+        document.getElementById('new-admin-employee-number').value = '';
+        ['new-admin-classes','new-admin-subjects','new-admin-groups','new-admin-dates','new-admin-lessontypes'].forEach(id=>{const el=document.getElementById(id); if(el) Array.from(el.options).forEach(o=>o.selected=false);});
         renderAdminsList();
-        alert("✅ Admin qo'shildi!");
+        alert('✅ Xodimga admin ruxsatlari saqlandi!');
     };
     window.updateAdmin = function(idx, key, val) {
         const admins = getAdminsList();
         if (admins[idx]) {
-            admins[idx][key] = val;
-            saveAdminsList(admins);
+            if (key === 'employeeNumber') {
+                const raw=String(val||'').trim().replace(/^#/,'');
+                const emp=raw ? getEmployeesList().find(e=>Number(e.number||e.id)===Number(raw)) : null;
+                if(raw && !emp){alert('Bunday xodim tartib raqami topilmadi.');renderAdminsList();return;}
+                admins[idx].employeeNumber=raw ? Number(emp.number||emp.id) : '';
+                if(emp) admins[idx].name=emp.name;
+            } else admins[idx][key] = val;
+            saveAdminsList(admins); renderAdminsList();
         }
     };
     window.deleteAdmin = function(idx) {
@@ -3329,6 +3594,90 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         admins.splice(idx, 1);
         saveAdminsList(admins);
         renderAdminsList();
+    };
+
+    window.searchEmployees = function() {
+        const number = String(document.getElementById('employee-search-number')?.value || '').trim().replace(/^#/, '');
+        const login = String(document.getElementById('employee-search-login')?.value || '').trim().toLowerCase();
+        const password = String(document.getElementById('employee-search-password')?.value || '').trim();
+        const out = document.getElementById('employee-search-results');
+        if (!out) return;
+        if (!number && !login && !password) { out.innerHTML = '<span style="color:#b45309;">Qidirish uchun tartib raqami, login yoki paroldan kamida bittasini kiriting.</span>'; return; }
+        const matches = getEmployeesList().map((e,i)=>({...e,_index:i})).filter(e =>
+            (!number || String(e.number || e.id || '') === number) &&
+            (!login || String(e.login || '').trim().toLowerCase().includes(login)) &&
+            (!password || String(e.password || '').trim().includes(password))
+        );
+        if (!matches.length) { out.innerHTML = '<span style="color:#b91c1c;">Mos xodim topilmadi.</span>'; return; }
+        out.innerHTML = `<div style="color:#166534;font-weight:700;margin-bottom:5px;">Topildi: ${matches.length} ta</div>` + matches.map(e=>`<div style="display:flex;gap:8px;flex-wrap:wrap;padding:7px;background:white;border:1px solid #bbf7d0;border-radius:6px;margin-top:5px;">
+            <b style="color:#047857;">№ ${hEsc(e.number || e.id || e._index+1)}</b>
+            <span><b>F.I.Sh:</b> ${hEsc(e.name || '')}</span>
+            <span><b>Login:</b> ${hEsc(e.login || '')}</span>
+            <span><b>Parol:</b> ${hEsc(e.password || '')}</span>
+        </div>`).join('');
+    };
+    window.clearEmployeeSearch = function() {
+        ['employee-search-number','employee-search-login','employee-search-password'].forEach(id=>{ const el=document.getElementById(id); if(el) el.value=''; });
+        const out=document.getElementById('employee-search-results'); if(out) out.innerHTML='';
+    };
+    window.renderEmployeesList = function() {
+        const cont = document.getElementById('employees-list-container');
+        if (!cont) return;
+        const employees = getEmployeesList();
+        if (!employees.length) {
+            cont.innerHTML = '<p style="color:#64748b;font-size:12px;margin:0;">Hozircha xodim qo‘shilmagan.</p>';
+            return;
+        }
+        cont.innerHTML = employees.map((e, i) => `<div style="display:flex;gap:7px;align-items:center;flex-wrap:wrap;border-bottom:1px solid #ecfdf5;padding:7px 2px;">
+            <b style="min-width:48px;color:#047857;">№ ${Number(e.number || i+1)}</b>
+            <input class="gi" style="width:155px;height:32px;text-align:left;font-weight:normal;" value="${hEsc(e.name||'')}" onchange="updateEmployee(${i},'name',this.value)" placeholder="Ism familiya">
+            <input class="gi" style="width:115px;height:32px;text-align:left;font-weight:normal;" value="${hEsc(e.login||'')}" onchange="updateEmployee(${i},'login',this.value)" placeholder="Login">
+            <input class="gi" style="width:115px;height:32px;text-align:left;font-weight:normal;" value="${hEsc(e.password||'')}" onchange="updateEmployee(${i},'password',this.value)" placeholder="Parol">
+            <button class="tab-btn" style="background:#fee2e2;color:#b91c1c;border:0;padding:5px 9px;" onclick="deleteEmployee(${i})">🗑️</button>
+        </div>`).join('');
+    };
+    function saveEmployeesList(list) {
+        lsSet('employees_list', list);
+        if (window.syncEmployeesToFirebase) window.syncEmployeesToFirebase(list);
+    }
+    window.addEmployee = function() {
+        const name = document.getElementById('new-employee-name').value.trim();
+        const login = document.getElementById('new-employee-login').value.trim();
+        const password = document.getElementById('new-employee-pass').value;
+        if (!name || !login || !password) return alert('Ism-familiya, login va parolni kiriting.');
+        const list = getEmployeesList();
+        const conflict=credentialConflict(login,password,'','',-1);
+        if (conflict) {
+            if (String(conflict.login||'').trim().toLowerCase()===login.toLowerCase()) { const suggestion=suggestFreeLogin(login,'','',-1); document.getElementById('new-employee-login').value=suggestion; alert('Login va parol juftligi boshqa akkaunt bilan aynan bir xil. Tavsiya etiladigan login: '+suggestion); }
+            else { const suggestion=suggestFreePassword(password,'','',-1); document.getElementById('new-employee-pass').value=suggestion; alert('Login va parol juftligi boshqa akkaunt bilan aynan bir xil. Tavsiya etiladigan yangi parol: '+suggestion); }
+            return;
+        }
+        const number = list.reduce((m,e)=>Math.max(m,Number(e.number||0)),0)+1;
+        list.push({number, id:number, name, login, password});
+        saveEmployeesList(list);
+        ['new-employee-name','new-employee-login','new-employee-pass'].forEach(id=>document.getElementById(id).value='');
+        renderEmployeesList();
+        alert('Xodim qo‘shildi. Tartib raqami: ' + number);
+    };
+    window.updateEmployee = function(index,key,value) {
+        const list=getEmployeesList();
+        if (!list[index]) return;
+        value=String(value||'').trim();
+        if (key==='login' || key==='password') {
+            const nextLogin=key==='login'?value:list[index].login;
+            const nextPass=key==='password'?value:list[index].password;
+            const conflict=credentialConflict(nextLogin,nextPass,'','',index);
+            if(conflict){
+                if(key==='login'){const suggestion=suggestFreeLogin(value,'','',index);alert('Login va parol juftligi boshqa akkaunt bilan aynan bir xil. Tavsiya etiladigan login: '+suggestion);}
+                else {const suggestion=suggestFreePassword(value,'','',index);alert('Login va parol juftligi boshqa akkaunt bilan aynan bir xil. Tavsiya etiladigan yangi parol: '+suggestion);}
+                renderEmployeesList(); return;
+            }
+        }
+        list[index][key]=value; saveEmployeesList(list); renderEmployeesList();
+    };
+    window.deleteEmployee = function(index) {
+        if (!confirm('Xodimni o‘chirmoqchimisiz?')) return;
+        const list=getEmployeesList(); list.splice(index,1); saveEmployeesList(list); renderEmployeesList();
     };
 
     window.loadMoveStudentsList = function() {
@@ -3482,7 +3831,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
     }
     function saveClassTeacher() {
         const cls = document.getElementById('admin-class-teacher-select').value;
-        const name = document.getElementById('class-teacher-input').value.trim();
+        const name = resolveEmployeeNumber(document.getElementById('class-teacher-input').value);
         if (!cls) return alert('Sinf tanlang!');
         const t = getClassTeachers();
         if (name) t[cls] = name; else delete t[cls];
@@ -3726,7 +4075,8 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 const st = col.grouped
                     ? getDateTeacherForLessonType(dtT,cls,col.l.name,qForDate,col.dIdx,col.groupIdx,col.ltShort)
                     : (dtT[`${cls}_${col.l.name}_${qForDate}_d_${col.dIdx}`] || '');
-                const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, col.l.name, col.l, entry.name);
+                const grantAccess = getEmployeeJournalGrant(cls, col.l.name, col.groupIdx, isoOfDate(dt));
+                const hasA = grantAccess.found ? grantAccess.allowed : (st ? checkAccess(st) : isAllowedForStudent(cls, col.l.name, col.l, entry.name));
                 const ro = !hasA || dLocked || cellLocked;
                 h += `<td class="${isToday?'is-today-cell':''}"><input type="text" class="gi ${val?'has-value':''} ${ro?'locked':''}" style="${getGradeStyle(val)}" value="${hEsc(val)}" ${ro?'disabled':''} onchange="saveM('${jEsc(qForDate)}','${jEsc(cls)}','${jEsc(col.l.name)}','${jEsc(entry.key)}',${col.dIdx},this.value${col.ltShort?`, '${jEsc(col.ltShort)}'`:''},${col.groupIdx})"></td>`;
             });
@@ -3807,7 +4157,8 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 const cellLocked = isCellLocked(locks, studentKey, l.name, qForDate, dIdx, selectedGroupIdx);
                 const dLocked = isDateLocked(locks, l.name, qForDate, dIdx, selectedGroupIdx);
                 const st = selectedGroupIdx >= 0 ? getDateTeacherForLessonType(dtT,cls,l.name,qForDate,dIdx,selectedGroupIdx,ltShort) : (dtT[`${cls}_${l.name}_${qForDate}_d_${dIdx}`] || '');
-                const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, l.name, l, studentName);
+                const grantAccess = getEmployeeJournalGrant(cls, l.name, useGroupIdx, isoDate);
+                const hasA = grantAccess.found ? grantAccess.allowed : (st ? checkAccess(st) : isAllowedForStudent(cls, l.name, l, studentName));
                 const ro = !hasA || dLocked || cellLocked;
                 const styleAttr = getGradeStyle(val);
                 const hv = val ? 'has-value' : '';
@@ -3859,17 +4210,46 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
 
     // Yopilgan yoki boshqa ustozga biriktirilgan guruh/sana ustunida
     // dars turlarini o'zgartirishga ruxsat berilmaydi.
+    function getDateForColumn(cls, sub, q, dIdx) {
+        const qObj = getQuarters().find(x => String(x.id) === String(q));
+        if (!qObj || !qObj.start) return '';
+        const d = new Date(qObj.start + 'T00:00:00'); d.setDate(d.getDate() + Number(dIdx||0));
+        return isoOfDate(d);
+    }
     function canManageLessonTypesForColumn(cls, sub, q, dIdx, groupIdx) {
+        // Admin panelda xodim tartib raqamiga berilgan ruxsat biriktirish va sana qulflaridan ustun turadi.
+        const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
+        const currentEmpNo = String(localStorage.getItem('loggedEmployeeId') || '').trim();
+        const norm = value => String(value || '').trim().toLocaleLowerCase('uz');
+        const adminGrant = getAdminsList().find(a =>
+            (currentEmpNo && a.employeeNumber && String(a.employeeNumber) === currentEmpNo) ||
+            (current && norm(a.name) === norm(current))
+        );
+        if (adminGrant) {
+            const matches = (stored, value) => {
+                const list = String(stored || '').split(',').map(x=>norm(x)).filter(Boolean);
+                return !list.length || list.includes(norm(value));
+            };
+            const groups = lsGet(`groups_${cls}_${sub}`, []) || [];
+            const gi = Number(groupIdx);
+            const groupName = Number.isInteger(gi) && gi >= 0 && groups[gi] ? groups[gi].name : '';
+            const types = getLessonTypesForColumn(cls, sub, q, dIdx, groupIdx);
+            const permittedTypes = String(adminGrant.lessontypes || '').split(',').map(x=>x.trim()).filter(Boolean);
+            const typeOK = !permittedTypes.length || (types.length ? types.some(t=>permittedTypes.some(pt=>norm(pt)===norm(t))) : getLessonTypes().some(t=>permittedTypes.some(pt=>norm(pt)===norm(t.short))));
+            const date = getDateForColumn(cls, sub, q, dIdx);
+            const scopeOK = matches(adminGrant.classes, cls) && matches(adminGrant.subjects, sub) &&
+                matches(adminGrant.groups, groupName) && matches(adminGrant.dates, date);
+            if (scopeOK && typeOK) return true;
+        }
         // Faqat kirgan ustozga aynan shu fan/sinf/guruh/sana biriktirilgan
         // bo'lsa ruxsat beriladi. Sinf rahbarligi boshqa fanlarga huquq bermaydi.
         const locks = (lsGet('lock_settings', {}) || {})[cls] || {};
         if (isDateLocked(locks, sub, q, dIdx, groupIdx)) return false;
 
-        const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
-        if (!current) return false;
-        const norm = value => String(value || '').trim().toLocaleLowerCase('uz');
+        const currentTeacherName = current;
+        if (!currentTeacherName) return false;
         const matchesCurrent = value => String(value || '').split(',')
-            .map(x => norm(x)).filter(Boolean).includes(norm(current));
+            .map(x => norm(x)).filter(Boolean).includes(norm(currentTeacherName));
 
         const assignedTeachers = [];
         const addTeacher = value => {
@@ -3918,8 +4298,12 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         }
         const currentArr = getLessonTypesForColumn(cls, sub, q, dIdx, groupIdx);
         const groupName = groupIdx >= 0 ? ((lsGet(`groups_${cls}_${sub}`, [])[groupIdx] || {}).name || `Guruh ${groupIdx+1}`) : 'Umumiy';
+        const loggedNo=String(localStorage.getItem('loggedEmployeeId')||'');
+        const loggedName=String(teacher||localStorage.getItem('loggedTeacher')||'').trim().toLocaleLowerCase('uz');
+        const grant=getAdminsList().find(a=>(loggedNo && a.employeeNumber && String(a.employeeNumber)===loggedNo)||(loggedName && String(a.name||'').trim().toLocaleLowerCase('uz')===loggedName));
+        const allowedTypeCodes=grant && String(grant.lessontypes||'').trim() ? String(grant.lessontypes).split(',').map(x=>x.trim()) : null;
         let checkboxes = '';
-        lessonTypes.forEach(t => {
+        lessonTypes.filter(t=>!allowedTypeCodes || allowedTypeCodes.some(x=>x.toLocaleLowerCase('uz')===String(t.short).toLocaleLowerCase('uz'))).forEach(t => {
             const checked = currentArr.includes(t.short) ? 'checked' : '';
             const primaryMark = t.primary ? ' ★' : '';
             checkboxes += `<label class="lt-checkbox-item">
@@ -3951,6 +4335,11 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         const checkboxes = document.querySelectorAll('#lt-checkbox-list input[type="checkbox"]');
         const selected = [];
         checkboxes.forEach(cb => { if (cb.checked) selected.push(cb.value); });
+        const loggedNo=String(localStorage.getItem('loggedEmployeeId')||'');
+        const loggedName=String(teacher||localStorage.getItem('loggedTeacher')||'').trim().toLocaleLowerCase('uz');
+        const grant=getAdminsList().find(a=>(loggedNo && a.employeeNumber && String(a.employeeNumber)===loggedNo)||(loggedName && String(a.name||'').trim().toLocaleLowerCase('uz')===loggedName));
+        const allowedTypeCodes=grant && String(grant.lessontypes||'').trim() ? String(grant.lessontypes).split(',').map(x=>x.trim().toLocaleLowerCase('uz')) : null;
+        if (allowedTypeCodes && selected.some(x=>!allowedTypeCodes.includes(String(x).toLocaleLowerCase('uz')))) { alert('Sizga ruxsat berilmagan dars turi tanlandi.'); return; }
         // Dars turi tahrirlanganda baholar bazasiga tegilmaydi.
         // Mavjud baholar ko'chirilmaydi, o'chirilmaydi va qayta yozilmaydi.
         setLessonTypesForColumn(cls, sub, q, dIdx, selected, Number.isInteger(Number(groupIdx)) ? Number(groupIdx) : -1);
@@ -4142,6 +4531,13 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         const dates = generateDates(cls, sub, q, gi);
         const d = dates[dIdx];
         if (!d) return;
+        const dateIsoForGrant = d.iso || getDateForColumn(cls, sub, q, dIdx);
+        const grantAccess = getEmployeeJournalGrant(cls, sub, gi, dateIsoForGrant);
+        if (grantAccess.found && !grantAccess.allowed) {
+            alert(grantAccess.reason || 'Bu sana uchun baho qo‘yishga ruxsat yo‘q.');
+            render();
+            return;
+        }
         const baseKey = dateKey(d);
         const m = getMarks(q, cls, sub);
         window.__gradeAuditBefore = JSON.parse(JSON.stringify(m || {}));
@@ -4453,7 +4849,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         const sub = document.getElementById('s-select').value;
         const groups = lsGet(`groups_${cls}_${sub}`, []);
         if (groups[gIdx]) {
-            groups[gIdx][key] = val;
+            groups[gIdx][key] = key === 'teacher' ? resolveEmployeeNumber(val) : val;
             lsSet(`groups_${cls}_${sub}`, groups);
             window.syncGroupsToFirebase(cls, sub, groups);
             updateGroupSelect();
@@ -4512,6 +4908,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         renderQuartersAdmin();
         renderStudentQuarterList();
         renderAdminsList();
+        renderEmployeesList();
         if (typeof loadBellSubjectSelect === 'function') loadBellSubjectSelect();
         if (typeof renderBellEditor === 'function') renderBellEditor();
         if (typeof loadRoomSubjectSelect === 'function') loadRoomSubjectSelect();
@@ -4804,7 +5201,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         const q = document.getElementById('assign-teacher-quarter')?.value || activeQuarter;
         const groupIdx = Number(document.getElementById('assign-teacher-group')?.value ?? -1);
         const dIdx = Number(document.getElementById('assign-teacher-date')?.value);
-        const name = document.getElementById('assign-teacher-name')?.value.trim();
+        const name = resolveEmployeeNumber(document.getElementById('assign-teacher-name')?.value);
         const lessonType = document.getElementById('assign-teacher-lesson-type')?.value || '';
         if (!cls || !sub || !name || !Number.isInteger(dIdx) || dIdx < 0) return alert('Sinf, fan, sana va ustozni to‘liq tanlang.');
         const data = lsGet('date_teachers', {}) || {};
@@ -4912,7 +5309,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
     window.addNewClassSubject = function() {
         const cls = document.getElementById('swap-class-select').value;
         const name = document.getElementById('new-sub-name').value.trim();
-        const teacher = document.getElementById('new-sub-teacher').value.trim();
+        const teacher = resolveEmployeeNumber(document.getElementById('new-sub-teacher').value);
         const daysRaw = document.getElementById('new-sub-days').value.trim();
         if (!cls || !name) return alert("Sinf va fan!");
         const days = daysRaw ? daysRaw.split(',').map(n => parseInt(n.trim())).filter(n => !isNaN(n)) : [1,3,5];
@@ -4928,7 +5325,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
     window.updateClassSubjectInfo = function(cls, idx, key, val) {
         const classSubs = getClassSubjectsRaw(cls);
         if (classSubs[idx]) {
-            classSubs[idx][key] = val;
+            classSubs[idx][key] = key === 'teacher' ? resolveEmployeeNumber(val) : val;
             lsSet(`class_subs_${cls}`, classSubs);
             window.syncClassSubsToFirebase(cls, classSubs);
             updateSubjectsList(); render();
