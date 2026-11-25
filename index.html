@@ -1748,13 +1748,18 @@
         else { lsSet(key, arr); window.syncToFirebase(key, arr); }
     }
     function removeLessonTypeFromColumnArray(cls, sub, q, dIdx, shortName, groupIdx) {
+        groupIdx = Number.isInteger(Number(groupIdx)) ? Number(groupIdx) : -1;
         if (!canManageLessonTypesForColumn(cls, sub, q, dIdx, groupIdx)) {
-            alert('Bu ustun yopilgan yoki boshqa ustozga biriktirilgan. Dars turini o‘chirib bo‘lmaydi.');
+            alert('Bu sinf, fan, guruh yoki sana sizga biriktirilmagan. Dars turini o‘chirish mumkin emas.');
             return;
         }
         let arr = getLessonTypesForColumn(cls, sub, q, dIdx, groupIdx);
+        if (!arr.includes(shortName)) return;
         arr = arr.filter(s => s !== shortName);
         setLessonTypesForColumn(cls, sub, q, dIdx, arr, groupIdx);
+        closeLessonContextMenu();
+        render();
+        showSaved();
     }
 
     function isoOfDate(dt) { return dt.getFullYear() + '-' + String(dt.getMonth()+1).padStart(2,'0') + '-' + String(dt.getDate()).padStart(2,'0'); }
@@ -3855,25 +3860,29 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
     // Yopilgan yoki boshqa ustozga biriktirilgan guruh/sana ustunida
     // dars turlarini o'zgartirishga ruxsat berilmaydi.
     function canManageLessonTypesForColumn(cls, sub, q, dIdx, groupIdx) {
-        // Qulflangan sana/guruh ustuniga hech qaysi ustozga ruxsat berilmaydi.
+        // Faqat kirgan ustozga aynan shu fan/sinf/guruh/sana biriktirilgan
+        // bo'lsa ruxsat beriladi. Sinf rahbarligi boshqa fanlarga huquq bermaydi.
         const locks = (lsGet('lock_settings', {}) || {})[cls] || {};
         if (isDateLocked(locks, sub, q, dIdx, groupIdx)) return false;
 
         const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
         if (!current) return false;
-        const norm = value => String(value || '').trim().toLocaleLowerCase();
+        const norm = value => String(value || '').trim().toLocaleLowerCase('uz');
         const matchesCurrent = value => String(value || '').split(',')
             .map(x => norm(x)).filter(Boolean).includes(norm(current));
 
         const assignedTeachers = [];
-        const addTeacher = value => { if (value && String(value).trim()) assignedTeachers.push(value); };
+        const addTeacher = value => {
+            if (value && String(value).trim()) assignedTeachers.push(value);
+        };
 
-        // Sinf rahbari va aynan shu fanga biriktirilgan asosiy ustoz.
-        addTeacher((getClassTeachers() || {})[cls]);
-        const subject = (getClassSubjectsRaw(cls) || []).find(x => x && x.name === sub);
+        // Aynan tanlangan fan uchun biriktirilgan ustoz.
+        const subject = (getClassSubjectsRaw(cls) || []).find(x =>
+            x && norm(x.name) === norm(sub)
+        );
         addTeacher(subject && subject.teacher);
 
-        // Guruh ustozini ham hisobga olamiz.
+        // Tanlangan guruhga biriktirilgan ustoz.
         const gi = Number(groupIdx);
         const groups = lsGet(`groups_${cls}_${sub}`, []) || [];
         if (Number.isInteger(gi) && gi >= 0) {
@@ -3881,27 +3890,16 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
             if (group) addTeacher(group.teacher);
         }
 
-        // Sana bo‘yicha umumiy biriktirish.
+        // Aynan shu sinf/fan/sana va guruh/sana uchun biriktirilgan ustoz.
         const dt = lsGet('date_teachers', {}) || {};
         addTeacher(dt[`${cls}_${sub}_${q}_d_${dIdx}`]);
-
-        // Guruh/sana va guruh/sana/dars turi bo‘yicha biriktirishlar.
         if (Number.isInteger(gi) && gi >= 0) {
             addTeacher(dt[groupDateTeacherKey(cls, sub, q, dIdx, gi)]);
-            const types = getLessonTypesForColumn(cls, sub, q, dIdx, gi) || [];
-            types.forEach(type => addTeacher(dt[groupDateTeacherKey(cls, sub, q, dIdx, gi, type)]));
-        } else {
-            // Umumiy ustunda barcha guruhga tegishli biriktirishlarni ham tekshiramiz.
-            groups.forEach((group, groupIndex) => {
-                if (!group) return;
-                addTeacher(dt[groupDateTeacherKey(cls, sub, q, dIdx, groupIndex)]);
-                (getLessonTypesForColumn(cls, sub, q, dIdx, groupIndex) || []).forEach(type =>
-                    addTeacher(dt[groupDateTeacherKey(cls, sub, q, dIdx, groupIndex, type)])
-                );
-            });
+            (getLessonTypesForColumn(cls, sub, q, dIdx, gi) || []).forEach(type =>
+                addTeacher(dt[groupDateTeacherKey(cls, sub, q, dIdx, gi, type)])
+            );
         }
 
-        // Biriktirishlardan hech bo‘lmaganda bittasi kirgan ustozga mos bo‘lishi kerak.
         return assignedTeachers.some(matchesCurrent);
     }
 
