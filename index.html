@@ -213,8 +213,13 @@
 <style>
     :root { --p: #4361ee; --bg: #f8f9fa; --text: #2b2d42; --today: #f0f4ff; }
     * { box-sizing: border-box; }
-    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 10px; color: var(--text); }
+    body { font-family: 'Segoe UI', Roboto, 'Noto Sans', system-ui, -apple-system, sans-serif; background: var(--bg); margin: 0; padding: 10px; color: var(--text); -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; letter-spacing: .1px; }
+    button, input, select, textarea { font: inherit; }
+    button, select { letter-spacing: .15px; }
+    h1, h2, h3, h4 { font-family: 'Segoe UI', Roboto, 'Noto Sans', system-ui, sans-serif; letter-spacing: -.25px; font-weight: 750; }
+    label { font-weight: 600; }
     .main { background: white; padding: 15px; border-radius: 15px; box-shadow: 0 5px 25px rgba(0,0,0,0.05); }
+    select, input, textarea { font-family: inherit; font-weight: 600; }
     .head { display: flex; justify-content: space-between; align-items: center; background: linear-gradient(135deg, var(--p), #3f37c9); color: white; padding: 12px; border-radius: 12px; margin-bottom: 15px; flex-wrap: wrap; gap: 10px; }
     .tab-btn { padding: 10px 15px; border-radius: 8px; cursor: pointer; background: white; font-weight: 600; transition: 0.2s; border: none; }
     .tab-btn.active { background: var(--p); color: white; }
@@ -547,6 +552,27 @@
         th, td { padding: 4px; font-size: 11px; }
         .modal-content { padding: 12px; }
     }
+
+    /* Yengilroq, zamonaviy va telefonda ham ravon o‘qiladigan shriftlar */
+    body {
+        font-family: Inter, "Segoe UI", Roboto, "Noto Sans", Arial, sans-serif;
+        font-size: 14px;
+        line-height: 1.5;
+        letter-spacing: .08px;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+    }
+    button, input, select, textarea, table {
+        font: inherit;
+    }
+    button, select, input, textarea {
+        letter-spacing: inherit;
+    }
+    button, .tab-btn, .login-tab-btn {
+        font-weight: 600;
+    }
+    th { font-weight: 700; letter-spacing: .12px; }
+    td { font-weight: 500; }
 </style>
 </head>
 <body>
@@ -2535,8 +2561,26 @@
         return false;
     }
 
-    // Guruhli fanlarda jurnalga kirish faqat aynan guruhga biriktirish orqali beriladi.
-    // Fanga asosiy biriktirishning o‘zi guruh jurnalini ochmaydi.
+    // Guruhli fan jurnalini guruh ustozlari umumiy ko‘rinishda ham ochishi mumkin.
+    // Baholash huquqi esa pastdagi teacherGroupScopeAllows orqali faqat o‘z guruhida qoladi.
+    function teacherGroupScopeAllows(cls, sub, q, dIdx, groupIdx, ltShort) {
+        const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
+        if (!current) return false;
+        const admins = getAdminsList() || [];
+        if (admins.some(a => teacherNameMatches(a && a.name, current))) return true;
+        const groups = lsGet(`groups_${cls}_${sub}`, []) || [];
+        if (!groups.length) return true;
+        const gi = Number(groupIdx);
+        if (!Number.isInteger(gi) || gi < 0 || !groups[gi]) return false;
+        if (teacherNameMatches(groups[gi].teacher, current)) return true;
+        const dt = lsGet('date_teachers', {}) || {};
+        const assigned = [
+            dt[groupDateTeacherKey(cls, sub, q, dIdx, gi, ltShort)],
+            dt[groupDateTeacherKey(cls, sub, q, dIdx, gi)]
+        ];
+        return assigned.some(v => teacherNameMatches(v, current));
+    }
+
     function canOpenJournalForGroup(cls, sub, groupIdx, dateIso) {
         const groups = lsGet(`groups_${cls}_${sub}`, []) || [];
         if (!groups.length) return true;
@@ -2547,8 +2591,8 @@
             const grant = getEmployeeJournalGrant(cls, sub, groupIdx, dateIso);
             return !grant.found || grant.allowed;
         }
-        const gi = (groupIdx === null || groupIdx === undefined || groupIdx === '') ? -1 : Number(groupIdx);
-        return Number.isInteger(gi) && gi >= 0 && !!groups[gi] && teacherNameMatches(groups[gi].teacher, current);
+        // Ustoz kamida bitta guruhga biriktirilgan bo‘lsa, jami jurnalni ko‘rishi mumkin.
+        return groups.some(g => g && teacherNameMatches(g.teacher, current));
     }
 
     let secretLoginTapCount = 0;
@@ -2605,14 +2649,7 @@
             if (wc) wc.style.display = 'none';
             updateGroupSelect();
             const gSel = document.getElementById('g-select');
-            if (gSel) {
-                if (groupIdx !== null && groupIdx !== undefined && groupIdx !== '') {
-                    const found = Array.from(gSel.options).find(o => o.value === String(groupIdx));
-                    gSel.value = found ? String(groupIdx) : 'all';
-                } else {
-                    gSel.value = 'all';
-                }
-            }
+            if (gSel) gSel.value = 'all';
             updateClassTeacherDisplay(cls);
             updateClassShiftDisplay(cls);
             updateSubjectTeachersDisplay(cls);
@@ -3995,17 +4032,14 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         const old = gSel.value;
         if (groups.length === 0) { gSel.style.display='none'; gSel.innerHTML=""; gSel.value="all"; return; }
         const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
-        const isAdmin = current && (getAdminsList() || []).some(a => teacherNameMatches(a && a.name, current));
-        const visibleGroups = current && !isAdmin
-            ? groups.map((g, i) => ({g, i})).filter(x => teacherNameMatches(x.g.teacher, current))
-            : groups.map((g, i) => ({g, i}));
+        // Ustoz barcha guruhlarni ko'ra oladi; ruxsat faqat o'ziga biriktirilgan
+        // guruhning baho/dars turi kataklarida teacherGroupScopeAllows orqali tekshiriladi.
         gSel.style.display = 'inline-block';
         gSel.innerHTML = "";
-        if (!current || isAdmin) gSel.add(new Option("Jami sinf", "all"));
-        visibleGroups.forEach(({g, i}) => gSel.add(new Option(g.name, i)));
+        gSel.add(new Option("Jami sinf", "all"));
+        groups.forEach((g, i) => gSel.add(new Option(g.name || ('Guruh ' + (i + 1)), i)));
         if (old && Array.from(gSel.options).some(o => o.value === old)) gSel.value = old;
-        else if (visibleGroups.length) gSel.value = String(visibleGroups[0].i);
-        else gSel.value = '__no_group__';
+        else gSel.value = 'all';
     }
     function updateSiteTitle() {
         const cls = document.getElementById('c-select')?.value || "";
@@ -4192,7 +4226,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                     : (dtT[`${cls}_${col.l.name}_${qForDate}_d_${col.dIdx}`] || '');
                 const grantAccess = getEmployeeJournalGrant(cls, col.l.name, col.groupIdx, isoOfDate(dt));
                 const identityAccess = hasTeacherGradeIdentity(cls, col.l.name, qForDate, col.dIdx, col.groupIdx, col.ltShort, isoOfDate(dt));
-                const hasA = identityAccess || (grantAccess.found ? grantAccess.allowed : (st ? checkAccess(st) : isAllowedForStudent(cls, col.l.name, col.l, entry.name)));
+                const hasA = teacherGroupScopeAllows(cls, col.l.name, qForDate, col.dIdx, col.groupIdx, col.ltShort) && (identityAccess || (grantAccess.found ? grantAccess.allowed : (st ? checkAccess(st) : isAllowedForStudent(cls, col.l.name, col.l, entry.name))));
                 const ro = !hasA || dLocked || cellLocked;
                 h += `<td class="${isToday?'is-today-cell':''}"><input type="text" class="gi ${val?'has-value':''} ${ro?'locked':''}" style="${getGradeStyle(val)}" value="${hEsc(val)}" ${ro?'disabled':''} onchange="saveM('${jEsc(qForDate)}','${jEsc(cls)}','${jEsc(col.l.name)}','${jEsc(entry.key)}',${col.dIdx},this.value${col.ltShort?`, '${jEsc(col.ltShort)}'`:''},${col.groupIdx})"></td>`;
             });
@@ -4275,7 +4309,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 const st = selectedGroupIdx >= 0 ? getDateTeacherForLessonType(dtT,cls,l.name,qForDate,dIdx,selectedGroupIdx,ltShort) : (dtT[`${cls}_${l.name}_${qForDate}_d_${dIdx}`] || '');
                 const grantAccess = getEmployeeJournalGrant(cls, l.name, useGroupIdx, isoDate);
                 const identityAccess = hasTeacherGradeIdentity(cls, l.name, qForDate, dIdx, selectedGroupIdx, ltShort, isoDate);
-                const hasA = identityAccess || (grantAccess.found ? grantAccess.allowed : (st ? checkAccess(st) : isAllowedForStudent(cls, l.name, l, studentName)));
+                const hasA = teacherGroupScopeAllows(cls, l.name, qForDate, dIdx, selectedGroupIdx, ltShort) && (identityAccess || (grantAccess.found ? grantAccess.allowed : (st ? checkAccess(st) : isAllowedForStudent(cls, l.name, l, studentName))));
                 const ro = !hasA || dLocked || cellLocked;
                 const styleAttr = getGradeStyle(val);
                 const hv = val ? 'has-value' : '';
@@ -4373,23 +4407,23 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
             if (value && String(value).trim()) assignedTeachers.push(value);
         };
 
-        // Aynan tanlangan fan uchun biriktirilgan ustoz.
-        const subject = (getClassSubjectsRaw(cls) || []).find(x =>
-            x && norm(x.name) === norm(sub)
-        );
-        addTeacher(subject && subject.teacher);
-
-        // Tanlangan guruhga biriktirilgan ustoz.
         const gi = Number(groupIdx);
         const groups = lsGet(`groups_${cls}_${sub}`, []) || [];
+        // Guruhli fanlarda fan bo‘yicha umumiy ustoz boshqa guruhning turini
+        // boshqara olmaydi; faqat aynan tanlangan guruh ustoziga ruxsat.
+        if (!groups.length) {
+            const subject = (getClassSubjectsRaw(cls) || []).find(x =>
+                x && norm(x.name) === norm(sub)
+            );
+            addTeacher(subject && subject.teacher);
+        }
         if (Number.isInteger(gi) && gi >= 0) {
             const group = groups[gi];
             if (group) addTeacher(group.teacher);
         }
 
-        // Aynan shu sinf/fan/sana va guruh/sana uchun biriktirilgan ustoz.
         const dt = lsGet('date_teachers', {}) || {};
-        addTeacher(dt[`${cls}_${sub}_${q}_d_${dIdx}`]);
+        if (!groups.length) addTeacher(dt[`${cls}_${sub}_${q}_d_${dIdx}`]);
         if (Number.isInteger(gi) && gi >= 0) {
             addTeacher(dt[groupDateTeacherKey(cls, sub, q, dIdx, gi)]);
             (getLessonTypesForColumn(cls, sub, q, dIdx, gi) || []).forEach(type =>
@@ -4528,7 +4562,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                     const cLocked = isCellLocked(locksAll, studentKey, sub, activeQuarter, col.dIdx, col.groupIdx);
                     const st = getDateTeacherForLessonType(dtTeachersAll,cls,sub,activeQuarter,col.dIdx,col.groupIdx,col.ltShort);
                     const identityAccess = hasTeacherGradeIdentity(cls, sub, activeQuarter, col.dIdx, col.groupIdx, col.ltShort, col.d.iso);
-                    const hasA = identityAccess || (st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, entry.name));
+                    const hasA = teacherGroupScopeAllows(cls, sub, activeQuarter, col.dIdx, col.groupIdx, col.ltShort) && (identityAccess || (st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, entry.name)));
                     const ro = !hasA || dLocked || cLocked;
                     const styleAttr = getGradeStyle(val);
                     const ltArg = col.ltShort ? `,'${jEsc(col.ltShort)}'` : '';
@@ -4600,7 +4634,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 const cLocked = isCellLocked(locks, studentKey, sub, activeQuarter, col.dIdx, selectedGroupIdx);
                 const st = selectedGroupIdx >= 0 ? getDateTeacherForLessonType(dtT,cls,sub,activeQuarter,col.dIdx,selectedGroupIdx,col.ltShort) : (dtT[`${cls}_${sub}_${activeQuarter}_d_${col.dIdx}`] || '');
                 const identityAccess = hasTeacherGradeIdentity(cls, sub, activeQuarter, col.dIdx, selectedGroupIdx, col.ltShort, col.d.iso);
-                const hasA = identityAccess || (st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, studentName));
+                const hasA = teacherGroupScopeAllows(cls, sub, activeQuarter, col.dIdx, selectedGroupIdx, col.ltShort) && (identityAccess || (st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, studentName)));
                 const ro = !hasA || dLocked || cLocked;
                 const styleAttr = getGradeStyle(val);
                 const hv = val ? 'has-value' : '';
@@ -4810,7 +4844,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
             const yKey = `marks_Annual_${cls}_${sub}`;
             const yVal = getMarksByKey(yKey)[studentKey] || '';
             const at = dtT[`${cls}_${sub}_annual`] || '';
-            const hasA = at ? checkAccess(at) : isAllowedForStudent(cls, sub, subObj, name);
+            const hasA = teacherGroupScopeAllows(cls, sub, q, dIdx, gi, ltShort) && (at ? checkAccess(at) : isAllowedForStudent(cls, sub, subObj, name));
             h += `<td class="avg-cell">${avg}</td><td class="y-col"><input type="text" class="gi" style="${hasA?getGradeStyle(yVal):''}" value="${hEsc(yVal)}" ${!hasA?'disabled':''} onchange="saveY('${jEsc(yKey)}', this.dataset.k, this.value)" data-k="${hEsc(studentKey)}"></td></tr>`;
         });
         document.getElementById('report-area').innerHTML = h + `</tbody></table>`;
