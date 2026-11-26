@@ -1573,13 +1573,13 @@
         const nums = (values || []).map(parseGradeNumber).filter(v => v !== null && Number.isFinite(v));
         return nums.length ? nums.reduce((a,b) => a+b, 0) / nums.length : null;
     }
-    // O'rtachani ikki xonagacha hisoblaymiz: .00 va .50 bo'lsa bitta kasr,
-    // boshqa yuzdanliklarda ikkita kasr ko'rsatamiz. Masalan: 4,5; 4,0; 4,80; 3,20.
+    // Butun baholar ,0 bilan, kasr baholar esa ortiqcha nolsiz ko‘rsatiladi.
+    // Masalan: 1 -> 1,0; 5 -> 5,0; 4,50 -> 4,5; 4,20 -> 4,2; 4,10 -> 4,1.
     function formatAverageNumber(value) {
         if (value === null || value === undefined || !Number.isFinite(Number(value))) return '';
         const rounded = Math.round((Number(value) + Number.EPSILON) * 100) / 100;
-        const cents = Math.round((rounded - Math.floor(rounded)) * 100);
-        return (cents === 0 || cents === 50 ? rounded.toFixed(1) : rounded.toFixed(2)).replace('.', ',');
+        if (Number.isInteger(rounded)) return rounded.toFixed(1).replace('.', ',');
+        return rounded.toFixed(2).replace(/0+$/, '').replace(/\.$/, '').replace('.', ',');
     }
     function formatGradeAverage(values, emptyValue = '') {
         const avg = calculateGradeAverage(values);
@@ -2492,38 +2492,48 @@
     function getEmployeeJournalGrant(cls, sub, groupIdx, dateIso) {
         const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
         const empNo = String(localStorage.getItem('loggedEmployeeId') || '').trim();
-        const norm = value => String(value || '').trim().toLocaleLowerCase('uz');
-        const grant = getAdminsList().find(a =>
-            (empNo && a.employeeNumber && String(a.employeeNumber) === empNo) ||
-            (current && norm(a.name) === norm(current))
-        );
+        const norm = value => String(value || '').trim().toLocaleLowerCase('uz').replace(/\s+/g, ' ');
+        const adminsRaw = getAdminsList() || [];
+        const admins = Array.isArray(adminsRaw) ? adminsRaw : Object.values(adminsRaw);
+        // Avval xodim raqami, topilmasa F.I.Sh. bo‘yicha aynan mos admin yozuvi olinadi.
+        const grant = (empNo ? admins.find(a => a && String(a.employeeNumber || '').trim() === empNo) : null)
+            || admins.find(a => a && current && norm(a.name) === norm(current));
         if (!grant) return { found:false, allowed:true };
+
+        const valuesOf = stored => {
+            if (Array.isArray(stored)) return stored.map(norm).filter(Boolean);
+            return String(stored || '').split(',').map(norm).filter(Boolean);
+        };
         const matches = (stored, value) => {
-            const values = String(stored || '').split(',').map(norm).filter(Boolean);
+            const values = valuesOf(stored);
             return !values.length || values.includes(norm(value));
         };
+
         const groupList = lsGet(`groups_${cls}_${sub}`, []) || [];
         const gi = groupIdx === null || groupIdx === undefined || groupIdx === '' ? -1 : Number(groupIdx);
         const groupName = gi >= 0 && groupList[gi] ? groupList[gi].name : '';
-        const scopeOK = matches(grant.classes, cls) && matches(grant.subjects, sub) &&
-            matches(grant.groups, groupName) && matches(grant.dates, dateIso || '');
-        if (!scopeOK) return { found:true, allowed:false, reason:'Sizga bu sinf, fan, guruh yoki sana uchun jurnalga kirish ruxsati berilmagan.' };
+        const scopeOK = matches(grant.classes, cls)
+            && matches(grant.subjects, sub)
+            && matches(grant.groups, groupName)
+            && matches(grant.dates, dateIso || '');
+        if (!scopeOK) {
+            return { found:true, allowed:false, reason:'Sizga bu sinf, fan yoki guruh uchun ruxsat berilmagan.' };
+        }
 
-        // Admin ruxsati qulflangan sanani ochib bermaydi.
+        // Admin ro‘yxatidagi sinf + fan + guruh mos bo‘lsa, sana/dars turi
+        // cheklanmagan holatda baholashga ruxsat beriladi. Qulflangan sana esa ochilmaydi.
         if (dateIso) {
             const locks = (lsGet('lock_settings', {}) || {})[cls] || {};
-            let locked = false;
             for (const q of getQuarters()) {
                 if (!q || !q.start || !q.id) continue;
                 const start = new Date(q.start + 'T00:00:00');
                 const target = new Date(dateIso + 'T00:00:00');
                 const idx = Math.round((target - start) / 86400000);
-                if (idx >= 0 && idx < 200) {
-                    if (isDateLocked(locks, sub, q.id, idx, gi)) locked = true;
-                    break;
+                if (idx >= 0 && idx < 200 && isDateLocked(locks, sub, q.id, idx, gi)) {
+                    return { found:true, allowed:false, reason:'Bu sana jurnalda qulflangan. Admin ruxsati ham qulflangan sanani ochmaydi.' };
                 }
+                if (idx >= 0 && idx < 200) break;
             }
-            if (locked) return { found:true, allowed:false, reason:'Bu sana jurnalda qulflangan. Admin ruxsati ham qulflangan sanani ochmaydi.' };
         }
         return { found:true, allowed:true };
     }
@@ -2586,13 +2596,30 @@
         if (!groups.length) return true;
         const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
         if (!current) return false;
-        const admins = getAdminsList() || [];
-        if (admins.some(a => teacherNameMatches(a && a.name, current))) {
-            const grant = getEmployeeJournalGrant(cls, sub, groupIdx, dateIso);
-            return !grant.found || grant.allowed;
+
+        const grant = getEmployeeJournalGrant(cls, sub, groupIdx, dateIso);
+        if (grant.found) return grant.allowed;
+
+        // Oddiy ustoz faqat aynan o‘ziga biriktirilgan guruhni ochadi.
+        const gi = groupIdx === null || groupIdx === undefined || groupIdx === '' ? -1 : Number(groupIdx);
+        if (!Number.isInteger(gi) || gi < 0 || !groups[gi]) return false;
+        if (teacherNameMatches(groups[gi].teacher, current)) return true;
+
+        // Sana bo‘yicha alohida biriktirilgan ustoz ham tan olinadi.
+        const dt = lsGet('date_teachers', {}) || {};
+        for (const q of getQuarters()) {
+            if (!q || !q.id) continue;
+            const dates = generateDates(cls, sub, q.id, gi) || [];
+            const di = dates.findIndex(d => d && d.iso === dateIso);
+            if (di < 0) continue;
+            const baseKey = groupDateTeacherKey(cls, sub, q.id, di, gi);
+            const assigned = [dt[baseKey]];
+            Object.keys(dt).forEach(k => {
+                if (k.startsWith(baseKey + '_')) assigned.push(dt[k]);
+            });
+            if (assigned.some(v => teacherNameMatches(v, current))) return true;
         }
-        // Ustoz kamida bitta guruhga biriktirilgan bo‘lsa, jami jurnalni ko‘rishi mumkin.
-        return groups.some(g => g && teacherNameMatches(g.teacher, current));
+        return false;
     }
 
     let secretLoginTapCount = 0;
@@ -4708,7 +4735,8 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         if (!d) return;
         const dateIsoForGrant = d.iso || getDateForColumn(cls, sub, q, dIdx);
         const grantAccess = getEmployeeJournalGrant(cls, sub, gi, dateIsoForGrant);
-        if (!canOpenJournalForGroup(cls, sub, gi, dateIsoForGrant)) {
+        const identityAccess = hasTeacherGradeIdentity(cls, sub, q, dIdx, gi, ltShort, dateIsoForGrant);
+        if (!canOpenJournalForGroup(cls, sub, gi, dateIsoForGrant) && !identityAccess && !(grantAccess.found && grantAccess.allowed)) {
             alert('Bu fan guruhlarga bo‘lingan. Baho qo‘yish uchun aynan shu guruhga ustoz biriktirilgan bo‘lishi kerak.');
             render();
             return;
@@ -4723,7 +4751,6 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         const assignedForGrade = gi >= 0 ? getDateTeacherForLessonType(dtForGrade, cls, sub, q, dIdx, gi, ltShort) : (dtForGrade[`${cls}_${sub}_${q}_d_${dIdx}`] || '');
         const subForGrade = (getClassSubjectsRaw(cls) || []).find(x => x && String(x.name || '').trim().toLocaleLowerCase('uz') === String(sub || '').trim().toLocaleLowerCase('uz'));
         const normalAccess = assignedForGrade ? checkAccess(assignedForGrade) : isAllowedForStudent(cls, sub, subForGrade, (getStudentsListObj()[cls] || []).find(n => getStudentKeyByName(cls, n) === studentKey) || '');
-        const identityAccess = hasTeacherGradeIdentity(cls, sub, q, dIdx, gi, ltShort, dateIsoForGrant);
         if ((!identityAccess && grantAccess.found && !grantAccess.allowed) || (!identityAccess && !normalAccess)) {
             alert(grantAccess.reason || 'Bu sinf, fan, guruh yoki sana uchun baho qo‘yishga ruxsat yo‘q.');
             render();
