@@ -1820,7 +1820,9 @@
             val = lsGet(`lesson_types_${cls}_${sub}_${q}_d_${dIdx}`, []);
         if (typeof val === 'string') val = val ? [val] : [];
         if (!Array.isArray(val)) val = [];
-        return val;
+        const typeMap = new Map(getLessonTypes().map(t => [String(t.short), t]));
+        return [...val].sort((a, b) => String(typeMap.get(String(a))?.full || a)
+            .localeCompare(String(typeMap.get(String(b))?.full || b), 'uz', { sensitivity: 'base' }));
     }
     function setLessonTypesForColumn(cls, sub, q, dIdx, arr, groupIdx) {
         const key = lessonTypesStorageKey(cls, sub, q, dIdx, groupIdx);
@@ -6086,6 +6088,30 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         </section>`;
     }
 
+    function getStudentSubjectGradeAverages(cls, name, sub, q, groupIdx) {
+        const skey = getStudentKeyByName(cls, name);
+        const row = (getMarks(q, cls, sub) || {})[skey] || {};
+        const dates = generateDates(cls, sub, q, groupIdx);
+        const types = getLessonTypes();
+        const allValues = [], primaryValues = [], primaryItems = [];
+        dates.forEach((d, idx) => {
+            const dk = dateKey(d), baseValue = row[dk];
+            if (parseGradeNumber(baseValue) !== null) allValues.push(baseValue);
+            getLessonTypesForColumn(cls, sub, q, idx, groupIdx).forEach(short => {
+                const value = row[dk + '__lt_' + short];
+                if (parseGradeNumber(value) === null) return;
+                allValues.push(value);
+                const type = types.find(t => String(t.short) === String(short));
+                if (type?.primary) primaryValues.push(value), primaryItems.push({value, type:type.full, date:d.date});
+            });
+        });
+        return {
+            overall: allValues.length ? formatGradeAverage(allValues, '—') : '—',
+            primary: primaryValues.length ? formatGradeAverage(primaryValues, '—') : '—',
+            primaryItems
+        };
+    }
+
     window.renderStudentView = function() {
         if (!loggedStudent) return;
         const cls = loggedStudent.cls;
@@ -6202,7 +6228,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
 
                 let markBadges = '';
                 if (dk) {
-                    if (m[dk]) {
+                    if (parseGradeNumber(m[dk]) !== null) {
                         const val = m[dk];
                         markBadges += `<span class="stu-mark-badge" style="background:${gradeColorHex(val)}" title="Dars bahosi">${hEsc(val)}</span>`;
                     }
@@ -6216,8 +6242,8 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                         ltArr.forEach(ltShort => {
                             const ltKey = dk + '__lt_' + ltShort;
                             const ltVal = m[ltKey];
-                            if (ltVal) {
-                                const codeObj = specialCodes.find(t => String(t.short).toUpperCase() === String(ltVal).toUpperCase());
+                            const codeObj = specialCodes.find(t => String(t.short).toUpperCase() === String(ltVal || '').trim().toUpperCase());
+                            if (parseGradeNumber(ltVal) !== null || (String(ltVal || '').trim() && codeObj)) {
                                 const ltLabel = codeObj ? codeObj.full : ((getLessonTypes().find(t => t.short === ltShort)?.full) || ltShort);
                                 const dedupe = codeObj ? String(ltVal).toUpperCase() : ltShort + ':' + ltVal;
                                 if (shownCodes.has(dedupe)) return;
@@ -6229,12 +6255,24 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 }
 
                 const topicHtml = topic.trim() ? `<div class="student-weekly-topic student-main-topic" style="margin-top:5px;" title="To‘liq mavzuni ko‘rish uchun bosing" onclick="event.stopPropagation();this.classList.toggle('expanded')">${hEsc(topic.trim())}</div>` : '';
+                const currentLessonTypes = dIdx !== -1 ? getLessonTypesForColumn(cls, l.name, myQuarter, dIdx, groupIdxForTeacher) : [];
+                const currentPrimaryTypes = currentLessonTypes.map(short => getLessonTypes().find(t => String(t.short) === String(short)))
+                    .filter(t => t && t.primary);
+                const primaryTypeLabel = currentPrimaryTypes.map(t => t.full).join(', ');
+                const primarySummary = currentPrimaryTypes.length
+                    ? `<div style="display:flex;align-items:center;gap:6px;font-size:12px;color:#8b929b;margin:4px 0 0 0;">
+                        <span aria-hidden="true" style="display:inline-block;width:9px;height:9px;min-width:9px;border-radius:50%;background:#7890b2;"></span>
+                        <span>${hEsc(primaryTypeLabel)}</span>
+                       </div>` : '';
                 dailyHtml += `<div class="student-lesson-detail ${isToday ? 'today' : ''}" onclick="openStudentLessonModal('${jEsc(cls)}','${jEsc(l.name)}','${jEsc(myQuarter)}','${jEsc(viewDateIso)}',${l.lessonIndex})">
                     <div class="stu-detail-header">
                         <div>
                             <div class="stu-detail-time">${hEsc(time.start)} - ${hEsc(time.end)}</div>
                             <div class="stu-detail-name-row" style="display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-top:2px;">
-                                <div class="stu-detail-name" style="margin-top:0;">${hEsc(l.name)}</div>
+                                <div>
+                                    <div class="stu-detail-name" style="margin-top:0;">${hEsc(l.name)}</div>
+                                    ${primarySummary}
+                                </div>
                                 ${markBadges ? `<div class="stu-detail-marks" style="display:inline-flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:0;">${markBadges}</div>` : ''}
                             </div>
                             ${topicHtml}
@@ -6440,12 +6478,13 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         if (val) marksHtml += `<div style="display:flex; align-items:center; gap:10px; margin-bottom:5px;"><span class="stu-mark-badge" style="background:${gradeColorHex(val)}; font-size:18px; padding:5px 15px;">${hEsc(val)}</span> <span style="font-size:13px; color:#64748b; font-weight:600;">Dars bahosi</span></div>`;
         
         const ltArr = getLessonTypesForColumn(cls, sub, q, dIdx, studentGroup && studentGroup.index >= 0 ? studentGroup.index : -1);
+        const currentLessonHasPrimaryType = ltArr.some(short => getLessonTypes().some(t => String(t.short) === String(short) && t.primary));
         const shownCodes = new Set();
         ltArr.forEach(ltShort => {
             const ltKey = dk + '__lt_' + ltShort;
             const ltVal = m[ltKey];
-            if (ltVal) {
-                const codeObj = getMarkCodes().find(t => String(t.short).toUpperCase() === String(ltVal).toUpperCase());
+            const codeObj = getMarkCodes().find(t => String(t.short).toUpperCase() === String(ltVal || '').trim().toUpperCase());
+            if (parseGradeNumber(ltVal) !== null || (String(ltVal || '').trim() && codeObj)) {
                 const ltLabel = codeObj ? codeObj.full : ((getLessonTypes().find(t => t.short === ltShort)?.full) || ltShort);
                 const dedupe = codeObj ? String(ltVal).toUpperCase() : ltShort + ':' + ltVal;
                 if (shownCodes.has(dedupe)) return;
@@ -6483,6 +6522,16 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 ${topic ? `<div style="position:relative;z-index:1;font-size:14px;color:#888;line-height:1.4;max-width:85%;white-space:pre-wrap;">${hEsc(topic)}</div>` : ''}
                 ${studentGroup && studentGroup.name ? `<div style="position:relative;z-index:1;font-size:13px;color:#0e7490;margin-top:7px;">👥 ${hEsc(studentGroup.name)}</div>` : ''}
             </div>
+            ${(() => {
+                const averages = getStudentSubjectGradeAverages(cls, studentName, sub, q, studentGroup && studentGroup.index >= 0 ? studentGroup.index : -1);
+                if (!currentLessonHasPrimaryType) return '';
+                return `<div style="background:#f8fafc;border:1px solid #dbe1e8;border-radius:10px;padding:12px;margin:0 0 14px;">
+                    <div style="font-size:14px;font-weight:800;color:#1e293b;margin-bottom:8px;">Muhim ish</div>
+                    <div style="display:grid;grid-template-columns:repeat(${averages.primary !== '—' ? '2' : '1'},minmax(0,1fr));gap:8px;margin-bottom:10px;">
+                        <div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px;"><b style="display:block;font-size:19px;color:#111;">${hEsc(averages.overall)}</b><span style="font-size:11px;color:#64748b;">Umumiy o‘rtacha ball</span></div>
+                        ${averages.primary !== '—' ? `<div style="background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:10px;"><b style="display:block;font-size:19px;color:#111;">${hEsc(averages.primary)}</b><span style="font-size:11px;color:#64748b;">Muhim ishlar uchun</span></div>` : ''}
+                    </div></div>`;
+            })()}
             <div style="font-size:12px; font-weight:800; color:#1e293b; background:#f1f5f9; padding:8px 12px; border-radius:6px; margin-bottom:10px;">Belgilar</div>
             <div style="margin-bottom:15px;">${marksHtml}</div>
 
