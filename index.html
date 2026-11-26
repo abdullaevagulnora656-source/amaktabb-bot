@@ -555,7 +555,8 @@
 <div class="kbd-shortcut-hint" id="kbd-shortcut-hint"></div>
 
 <div id="login-screen" style="text-align:center; margin-top:80px;">
-    <h2 style="color:var(--p); margin-bottom:20px;">Maktab Tizimi</h2>
+    <h2 id="login-secret-title" onclick="revealQuickTeacherLogin()" style="color:var(--p); margin-bottom:20px; user-select:none;">Maktab Tizimi</h2>
+    <button id="quick-teacher-login-btn" onclick="quickTeacherLogin()" class="tab-btn" style="display:none;width:250px;margin:0 auto 10px;background:#eef2ff;color:#3730a3;">Ustoz sifatida oddiy kirish</button>
     <div id="unified-login-form">
         <div style="font-size:13px;color:#64748b;margin-bottom:10px;">Xodim yoki o‘quvchi login-paroli orqali kiring</div>
         <input type="text" id="t-name-input" class="gi" style="width:250px; height:45px; font-size: 16px; margin-bottom: 10px; font-weight:normal;" placeholder="Login..." autocomplete="username"> <br>
@@ -1531,6 +1532,33 @@
     function markKey(q, cls, sub) { return `marks_${q}_${cls}_${sub}`; }
     function getMarksByKey(key) { if (window.__marksCache && window.__marksCache[key]) return window.__marksCache[key]; return lsGet(key, {}); }
     function getMarks(q, cls, sub) { return getMarksByKey(markKey(q, cls, sub)); }
+    // Ikki baholi yozuvlar: 1,2 va 1/2 — ikkita alohida baho,
+    // ularning o'rtachasi hisoblanadi. Masalan, 4,5 yoki 4/5 = 4.5.
+    // Nuqtali yozuv (masalan, 4.5) esa bitta kasr baho hisoblanadi.
+    function parseGradeNumber(value) {
+        const s = String(value == null ? '' : value).trim();
+        if (!s) return null;
+        const pair = s.match(/^(\d+(?:\.\d+)?)\s*[,/]\s*(\d+(?:\.\d+)?)$/);
+        if (pair) return (Number(pair[1]) + Number(pair[2])) / 2;
+        if (/^\d+(?:\.\d+)?$/.test(s)) return Number(s);
+        return null;
+    }
+    function calculateGradeAverage(values) {
+        const nums = (values || []).map(parseGradeNumber).filter(v => v !== null && Number.isFinite(v));
+        return nums.length ? nums.reduce((a,b) => a+b, 0) / nums.length : null;
+    }
+    // O'rtachani ikki xonagacha hisoblaymiz: .00 va .50 bo'lsa bitta kasr,
+    // boshqa yuzdanliklarda ikkita kasr ko'rsatamiz. Masalan: 4,5; 4,0; 4,80; 3,20.
+    function formatAverageNumber(value) {
+        if (value === null || value === undefined || !Number.isFinite(Number(value))) return '';
+        const rounded = Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+        const cents = Math.round((rounded - Math.floor(rounded)) * 100);
+        return (cents === 0 || cents === 50 ? rounded.toFixed(1) : rounded.toFixed(2)).replace('.', ',');
+    }
+    function formatGradeAverage(values, emptyValue = '') {
+        const avg = calculateGradeAverage(values);
+        return avg === null ? emptyValue : formatAverageNumber(avg);
+    }
     function gradeAuditValue(v) { return v == null ? '' : String(v); }
     function writeGradeAudit(q, cls, sub, before, after) {
         const log = lsGet('grade_audit', {}) || {};
@@ -2474,10 +2502,89 @@
         return { found:true, allowed:true };
     }
 
+    // Baholashga ruxsat: administratorlar ro'yxatidagi F.I.Sh yoki aynan shu
+    // fan/guruh/sana uchun biriktirilgan ustoz kirgan ustoz bilan mos bo'lishi kerak.
+    function teacherNameMatches(value, currentName) {
+        const norm = v => String(v || '').trim().toLocaleLowerCase('uz').replace(/\s+/g, ' ');
+        return String(value || '').split(',').some(v => norm(v) && norm(v) === norm(currentName));
+    }
+    function hasTeacherGradeIdentity(cls, sub, q, dIdx, groupIdx, ltShort, dateIso) {
+        const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
+        if (!current) return false;
+        const admins = getAdminsList() || [];
+        if (admins.some(a => teacherNameMatches(a && a.name, current))) return true;
+
+        const subject = (getClassSubjectsRaw(cls) || []).find(x => x && String(x.name || '').trim().toLocaleLowerCase('uz') === String(sub || '').trim().toLocaleLowerCase('uz'));
+        const gi = Number(groupIdx);
+        const groups = lsGet(`groups_${cls}_${sub}`, []) || [];
+        // Guruhli fanlarda asosiy fan o‘qituvchisi guruh jurnaliga avtomatik kira olmaydi.
+        // Faqat aynan shu guruhga biriktirilgan ustoz baholay oladi.
+        if (groups.length) {
+            return Number.isInteger(gi) && gi >= 0 && !!groups[gi] && teacherNameMatches(groups[gi].teacher, current);
+        }
+        if (subject && teacherNameMatches(subject.teacher, current)) return true;
+
+        const dt = lsGet('date_teachers', {}) || {};
+        const assigned = [];
+        if (Number.isInteger(gi) && gi >= 0) {
+            assigned.push(dt[groupDateTeacherKey(cls, sub, q, dIdx, gi, ltShort)]);
+            assigned.push(dt[groupDateTeacherKey(cls, sub, q, dIdx, gi)]);
+        }
+        assigned.push(dt[`${cls}_${sub}_${q}_d_${dIdx}`]);
+        if (assigned.some(v => teacherNameMatches(v, current))) return true;
+        return false;
+    }
+
+    // Guruhli fanlarda jurnalga kirish faqat aynan guruhga biriktirish orqali beriladi.
+    // Fanga asosiy biriktirishning o‘zi guruh jurnalini ochmaydi.
+    function canOpenJournalForGroup(cls, sub, groupIdx, dateIso) {
+        const groups = lsGet(`groups_${cls}_${sub}`, []) || [];
+        if (!groups.length) return true;
+        const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
+        if (!current) return false;
+        const admins = getAdminsList() || [];
+        if (admins.some(a => teacherNameMatches(a && a.name, current))) {
+            const grant = getEmployeeJournalGrant(cls, sub, groupIdx, dateIso);
+            return !grant.found || grant.allowed;
+        }
+        const gi = (groupIdx === null || groupIdx === undefined || groupIdx === '') ? -1 : Number(groupIdx);
+        return Number.isInteger(gi) && gi >= 0 && !!groups[gi] && teacherNameMatches(groups[gi].teacher, current);
+    }
+
+    let secretLoginTapCount = 0;
+    let secretLoginTapTimer = null;
+    window.revealQuickTeacherLogin = function() {
+        secretLoginTapCount++;
+        clearTimeout(secretLoginTapTimer);
+        secretLoginTapTimer = setTimeout(() => secretLoginTapCount = 0, 1800);
+        if (secretLoginTapCount >= 5) {
+            const btn = document.getElementById('quick-teacher-login-btn');
+            if (btn) btn.style.display = 'block';
+            secretLoginTapCount = 0;
+        }
+    };
+    window.quickTeacherLogin = function() {
+        const name = prompt('Ustozning F.I.Sh. ni kiriting:');
+        if (name === null || !name.trim()) return;
+        const norm = v => String(v || '').trim().toLocaleLowerCase('uz').replace(/\s+/g, ' ');
+        const emp = (lsGet('employees_list', []) || []).find(e => norm(e.name) === norm(name));
+        if (!emp) return alert('Bunday F.I.Sh. xodimlar ro‘yxatidan topilmadi.');
+        teacher = String(emp.name || '').trim();
+        localStorage.setItem('loggedTeacher', teacher);
+        localStorage.setItem('loggedEmployeeId', String(emp.number || emp.id || ''));
+        localStorage.removeItem('loggedStudent');
+        loggedStudent = null;
+        showMain();
+    };
+
     window.gotoJournal = function(cls, sub, groupIdx, dateIso) {
         try {
             const access = getEmployeeJournalGrant(cls, sub, groupIdx, dateIso);
             if (!access.allowed) { alert(access.reason); return; }
+            if (!canOpenJournalForGroup(cls, sub, groupIdx, dateIso)) {
+                alert('Bu fan guruhlarga bo‘lingan. Jurnalni ochish uchun aynan shu guruhga ustoz biriktirilgan bo‘lishi kerak.');
+                return;
+            }
             if (typeof closeTeacherSchedule === 'function') closeTeacherSchedule();
             const cSel = document.getElementById('c-select');
             if (!cSel) return;
@@ -3887,11 +3994,18 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         const groups = lsGet(`groups_${cls}_${sub}`, []);
         const old = gSel.value;
         if (groups.length === 0) { gSel.style.display='none'; gSel.innerHTML=""; gSel.value="all"; return; }
+        const current = String(teacher || localStorage.getItem('loggedTeacher') || '').trim();
+        const isAdmin = current && (getAdminsList() || []).some(a => teacherNameMatches(a && a.name, current));
+        const visibleGroups = current && !isAdmin
+            ? groups.map((g, i) => ({g, i})).filter(x => teacherNameMatches(x.g.teacher, current))
+            : groups.map((g, i) => ({g, i}));
         gSel.style.display = 'inline-block';
         gSel.innerHTML = "";
-        gSel.add(new Option("Jami sinf", "all"));
-        groups.forEach((g, i) => gSel.add(new Option(g.name, i)));
+        if (!current || isAdmin) gSel.add(new Option("Jami sinf", "all"));
+        visibleGroups.forEach(({g, i}) => gSel.add(new Option(g.name, i)));
         if (old && Array.from(gSel.options).some(o => o.value === old)) gSel.value = old;
+        else if (visibleGroups.length) gSel.value = String(visibleGroups[0].i);
+        else gSel.value = '__no_group__';
     }
     function updateSiteTitle() {
         const cls = document.getElementById('c-select')?.value || "";
@@ -3949,8 +4063,9 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         const groups = lsGet(`groups_${cls}_${subName}`, []);
         if (groups.length === 0) return checkAccess(subObj?.teacher);
         const mine = groups.filter(g => g.students && g.students.includes(studentName));
-        if (mine.length > 0) return mine.some(g => g.teacher && checkAccess(g.teacher));
-        return checkAccess(subObj?.teacher);
+        // Guruhli fanda asosiy fan o‘qituvchisi guruhga kirmagan o‘quvchilarga
+        // baho qo‘ya olmaydi; faqat o‘quvchining guruhi o‘qituvchisi ruxsatli.
+        return mine.some(g => g.teacher && checkAccess(g.teacher));
     }
     function buildBaseLessons(cls, dateValStr, q) {
         const dt = new Date(dateValStr);
@@ -4076,7 +4191,8 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                     ? getDateTeacherForLessonType(dtT,cls,col.l.name,qForDate,col.dIdx,col.groupIdx,col.ltShort)
                     : (dtT[`${cls}_${col.l.name}_${qForDate}_d_${col.dIdx}`] || '');
                 const grantAccess = getEmployeeJournalGrant(cls, col.l.name, col.groupIdx, isoOfDate(dt));
-                const hasA = grantAccess.found ? grantAccess.allowed : (st ? checkAccess(st) : isAllowedForStudent(cls, col.l.name, col.l, entry.name));
+                const identityAccess = hasTeacherGradeIdentity(cls, col.l.name, qForDate, col.dIdx, col.groupIdx, col.ltShort, isoOfDate(dt));
+                const hasA = identityAccess || (grantAccess.found ? grantAccess.allowed : (st ? checkAccess(st) : isAllowedForStudent(cls, col.l.name, col.l, entry.name)));
                 const ro = !hasA || dLocked || cellLocked;
                 h += `<td class="${isToday?'is-today-cell':''}"><input type="text" class="gi ${val?'has-value':''} ${ro?'locked':''}" style="${getGradeStyle(val)}" value="${hEsc(val)}" ${ro?'disabled':''} onchange="saveM('${jEsc(qForDate)}','${jEsc(cls)}','${jEsc(col.l.name)}','${jEsc(entry.key)}',${col.dIdx},this.value${col.ltShort?`, '${jEsc(col.ltShort)}'`:''},${col.groupIdx})"></td>`;
             });
@@ -4158,7 +4274,8 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 const dLocked = isDateLocked(locks, l.name, qForDate, dIdx, selectedGroupIdx);
                 const st = selectedGroupIdx >= 0 ? getDateTeacherForLessonType(dtT,cls,l.name,qForDate,dIdx,selectedGroupIdx,ltShort) : (dtT[`${cls}_${l.name}_${qForDate}_d_${dIdx}`] || '');
                 const grantAccess = getEmployeeJournalGrant(cls, l.name, useGroupIdx, isoDate);
-                const hasA = grantAccess.found ? grantAccess.allowed : (st ? checkAccess(st) : isAllowedForStudent(cls, l.name, l, studentName));
+                const identityAccess = hasTeacherGradeIdentity(cls, l.name, qForDate, dIdx, selectedGroupIdx, ltShort, isoDate);
+                const hasA = identityAccess || (grantAccess.found ? grantAccess.allowed : (st ? checkAccess(st) : isAllowedForStudent(cls, l.name, l, studentName)));
                 const ro = !hasA || dLocked || cellLocked;
                 const styleAttr = getGradeStyle(val);
                 const hv = val ? 'has-value' : '';
@@ -4395,17 +4512,29 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                     let dk = dateKey(col.d);
                     if (col.ltShort) dk += '__lt_' + col.ltShort;
                     const val = marksAll[studentKey]?.[dk] || (col.ltShort ? (marksAll[studentKey]?.[dateKey(col.d)] || '') : '') || '';
-                    if (val && !isNaN(val)) rowVals.push(parseFloat(val));
+                    const avgRaw = col.ltShort ? (marksAll[studentKey]?.[dateKey(col.d) + '__lt_' + col.ltShort] || '') : (marksAll[studentKey]?.[dateKey(col.d)] || '');
+                    const avgNum = parseGradeNumber(avgRaw);
+                    if (avgNum !== null) {
+                        const avgDateKey = `${col.groupIdx}_${dateKey(col.d)}`;
+                        if (!col.ltShort) rowVals.push(avgRaw);
+                        else {
+                            const seenKey = String(avgRaw).trim().toUpperCase();
+                            if (!rowVals.__seen) rowVals.__seen = {};
+                            if (!rowVals.__seen[avgDateKey]) rowVals.__seen[avgDateKey] = new Set();
+                            if (!rowVals.__seen[avgDateKey].has(seenKey)) { rowVals.__seen[avgDateKey].add(seenKey); rowVals.push(avgRaw); }
+                        }
+                    }
                     const dLocked = isDateLocked(locksAll, sub, activeQuarter, col.dIdx, col.groupIdx);
                     const cLocked = isCellLocked(locksAll, studentKey, sub, activeQuarter, col.dIdx, col.groupIdx);
                     const st = getDateTeacherForLessonType(dtTeachersAll,cls,sub,activeQuarter,col.dIdx,col.groupIdx,col.ltShort);
-                    const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, entry.name);
+                    const identityAccess = hasTeacherGradeIdentity(cls, sub, activeQuarter, col.dIdx, col.groupIdx, col.ltShort, col.d.iso);
+                    const hasA = identityAccess || (st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, entry.name));
                     const ro = !hasA || dLocked || cLocked;
                     const styleAttr = getGradeStyle(val);
                     const ltArg = col.ltShort ? `,'${jEsc(col.ltShort)}'` : '';
                     combined += `<td class="${col.d.date===todayAll?'is-today-cell ':''}${col.ltShort?'lt-col-cell':''}"><input type="text" class="gi ${val?'has-value':''} ${ro?'locked':''}" style="${styleAttr}" value="${hEsc(val)}" ${ro?'disabled':''} onchange="saveM('${jEsc(activeQuarter)}','${jEsc(cls)}','${jEsc(sub)}','${jEsc(studentKey)}',${col.dIdx},this.value${ltArg},${col.groupIdx})"></td>`;
                 });
-                const avg = rowVals.length ? (rowVals.reduce((a,b)=>a+b,0)/rowVals.length).toFixed(1) : '';
+                const avg = formatGradeAverage(rowVals, '');
                 const qVal = marksAll[studentKey]?.['__quarter'] || '';
                 const qLocked = lockTrue(locksAll.cells?.[studentKey]?.[sub]?.[activeQuarter]?.['__quarter']);
                 const qt = dtTeachersAll[`${cls}_${sub}_${activeQuarter}_quarter`] || '';
@@ -4455,11 +4584,23 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 let dk = dateKey(col.d);
                 if (col.ltShort) dk += '__lt_' + col.ltShort;
                 const val = marks[studentKey]?.[dk] || (col.ltShort ? (marks[studentKey]?.[dateKey(col.d)] || '') : '') || '';
-                if (val && !isNaN(val)) row.push(parseFloat(val));
+                const avgRaw = col.ltShort ? (marks[studentKey]?.[dateKey(col.d) + '__lt_' + col.ltShort] || '') : (marks[studentKey]?.[dateKey(col.d)] || '');
+                const avgNum = parseGradeNumber(avgRaw);
+                if (avgNum !== null) {
+                    if (!col.ltShort) row.push(avgRaw);
+                    else {
+                        const seenKey = String(avgRaw).trim().toUpperCase();
+                        if (!row.__seen) row.__seen = {};
+                        const avgDateKey = dateKey(col.d);
+                        if (!row.__seen[avgDateKey]) row.__seen[avgDateKey] = new Set();
+                        if (!row.__seen[avgDateKey].has(seenKey)) { row.__seen[avgDateKey].add(seenKey); row.push(avgRaw); }
+                    }
+                }
                 const dLocked = isDateLocked(locks, sub, activeQuarter, col.dIdx, selectedGroupIdx);
                 const cLocked = isCellLocked(locks, studentKey, sub, activeQuarter, col.dIdx, selectedGroupIdx);
                 const st = selectedGroupIdx >= 0 ? getDateTeacherForLessonType(dtT,cls,sub,activeQuarter,col.dIdx,selectedGroupIdx,col.ltShort) : (dtT[`${cls}_${sub}_${activeQuarter}_d_${col.dIdx}`] || '');
-                const hasA = st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, studentName);
+                const identityAccess = hasTeacherGradeIdentity(cls, sub, activeQuarter, col.dIdx, selectedGroupIdx, col.ltShort, col.d.iso);
+                const hasA = identityAccess || (st ? checkAccess(st) : isAllowedForStudent(cls, sub, subObj, studentName));
                 const ro = !hasA || dLocked || cLocked;
                 const styleAttr = getGradeStyle(val);
                 const hv = val ? 'has-value' : '';
@@ -4467,7 +4608,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 const tdClass = (col.d.date===today?'is-today-cell ':'') + (col.ltShort ? 'lt-col-cell' : '');
                 h += `<td class="${tdClass}"><input type="text" class="gi ${hv} ${ro?'locked':''}" style="${styleAttr}" value="${hEsc(val)}" ${ro?'disabled':''} onchange="saveM('${jEsc(activeQuarter)}','${jEsc(cls)}','${jEsc(sub)}','${jEsc(studentKey)}',${col.dIdx},this.value${ltArg},${selectedGroupIdx})"></td>`;
             });
-            const avg = row.length ? (row.reduce((a,b)=>a+b,0)/row.length).toFixed(1) : '';
+            const avg = formatGradeAverage(row, '');
             const qVal = marks[studentKey]?.['__quarter'] || '';
             const qLocked = lockTrue(locks.cells?.[studentKey]?.[sub]?.[activeQuarter]?.['__quarter']);
             const qt = dtT[`${cls}_${sub}_${activeQuarter}_quarter`] || '';
@@ -4527,14 +4668,30 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
         if (!studentKey) return;
         const gi = Number.isInteger(Number(groupIdx)) ? Number(groupIdx) : -1;
         const groupList = (lsGet(`groups_${cls}_${sub}`, []) || []);
-        window.__gradeAuditContext = {teacher: teacher || '', group: gi >= 0 ? (groupList[gi]?.name || `Guruh ${gi+1}`) : ''};
+        window.__gradeAuditContext = {teacher: teacher || localStorage.getItem('loggedTeacher') || '', group: gi >= 0 ? (groupList[gi]?.name || `Guruh ${gi+1}`) : ''};
         const dates = generateDates(cls, sub, q, gi);
         const d = dates[dIdx];
         if (!d) return;
         const dateIsoForGrant = d.iso || getDateForColumn(cls, sub, q, dIdx);
         const grantAccess = getEmployeeJournalGrant(cls, sub, gi, dateIsoForGrant);
-        if (grantAccess.found && !grantAccess.allowed) {
-            alert(grantAccess.reason || 'Bu sana uchun baho qo‘yishga ruxsat yo‘q.');
+        if (!canOpenJournalForGroup(cls, sub, gi, dateIsoForGrant)) {
+            alert('Bu fan guruhlarga bo‘lingan. Baho qo‘yish uchun aynan shu guruhga ustoz biriktirilgan bo‘lishi kerak.');
+            render();
+            return;
+        }
+        const locksForGrade = (lsGet('lock_settings', {}) || {})[cls] || {};
+        if (isDateLocked(locksForGrade, sub, q, dIdx, gi) || isCellLocked(locksForGrade, studentKey, sub, q, dIdx, gi)) {
+            alert('Bu sana yoki katak qulflangan. Baho saqlanmadi.');
+            render();
+            return;
+        }
+        const dtForGrade = lsGet('date_teachers', {}) || {};
+        const assignedForGrade = gi >= 0 ? getDateTeacherForLessonType(dtForGrade, cls, sub, q, dIdx, gi, ltShort) : (dtForGrade[`${cls}_${sub}_${q}_d_${dIdx}`] || '');
+        const subForGrade = (getClassSubjectsRaw(cls) || []).find(x => x && String(x.name || '').trim().toLocaleLowerCase('uz') === String(sub || '').trim().toLocaleLowerCase('uz'));
+        const normalAccess = assignedForGrade ? checkAccess(assignedForGrade) : isAllowedForStudent(cls, sub, subForGrade, (getStudentsListObj()[cls] || []).find(n => getStudentKeyByName(cls, n) === studentKey) || '');
+        const identityAccess = hasTeacherGradeIdentity(cls, sub, q, dIdx, gi, ltShort, dateIsoForGrant);
+        if ((!identityAccess && grantAccess.found && !grantAccess.allowed) || (!identityAccess && !normalAccess)) {
+            alert(grantAccess.reason || 'Bu sinf, fan, guruh yoki sana uchun baho qo‘yishga ruxsat yo‘q.');
             render();
             return;
         }
@@ -4646,10 +4803,10 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
             let qv = [];
             quarters.forEach(q => {
                 const val = getMarks(q.id, cls, sub)[studentKey]?.['__quarter'] || '';
-                if (val && !isNaN(val)) qv.push(parseFloat(val));
+                if (parseGradeNumber(val) !== null) qv.push(val);
                 h += `<td><div class="gi" style="line-height:30px; margin:auto; width:auto; padding:0 8px; ${getGradeStyle(val)}">${hEsc(val)}</div></td>`;
             });
-            const avg = qv.length ? (qv.reduce((a,b)=>a+b,0)/qv.length).toFixed(1) : '-';
+            const avg = formatGradeAverage(qv, '-');
             const yKey = `marks_Annual_${cls}_${sub}`;
             const yVal = getMarksByKey(yKey)[studentKey] || '';
             const at = dtT[`${cls}_${sub}_annual`] || '';
@@ -5784,7 +5941,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 if (q1 && q2 && !isNaN(q1) && !isNaN(q2)) {
                     const t1 = Number(q1row.__meta?.__quarter?.savedAt || q1row.__ts || 0);
                     const t2 = Number(q2row.__meta?.__quarter?.savedAt || q2row.__ts || 0);
-                    addItem({subject:subject.name,value:((parseFloat(q1)+parseFloat(q2))/2).toFixed(1),
+                    addItem({subject:subject.name,value:formatAverageNumber((parseFloat(q1)+parseFloat(q2))/2),
                         purpose:'Yarim yillik baho',lessonDate:'',savedAt:Math.max(t1,t2),quarter:'Yarim yillik'});
                 }
             }
@@ -6383,7 +6540,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 const dk = dateKey(d);
                 const v = m[dk];
                 if (v) {
-                    if (/^\d+(?:[.,]\d+)?$/.test(String(v).trim())) valid.push(parseFloat(String(v).replace(',','.')));
+                    if (parseGradeNumber(v) !== null) valid.push(v);
                     chips.push(`<span title="${hEsc(d.date)} — to‘liq ma’lumotni ko‘rish" onclick="event.stopPropagation();openStudentLessonModal('${jEsc(cls)}','${jEsc(subject.name)}','${jEsc(q)}','${jEsc(d.iso || '')}',${Number(d.instance)||0})" style="display:inline-block;margin:2px;padding:2px 5px;border-radius:3px;color:#fff;background:${gradeColorHex(v)};font-weight:700;cursor:pointer;">${hEsc(v)}</span>`);
                 }
                 const lessonTypes = getLessonTypesForColumn(cls, subject.name, q, dIdx, groupIdx);
@@ -6394,15 +6551,17 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                     const dedupe = String(typeValue).toUpperCase();
                     if (shown.has(dedupe)) return;
                     shown.add(dedupe);
-                    if (/^\d+(?:[.,]\d+)?$/.test(String(typeValue).trim())) valid.push(parseFloat(String(typeValue).replace(',','.')));
+                    if (parseGradeNumber(typeValue) !== null) valid.push(typeValue);
                     const typeObj = getLessonTypes().find(t => String(t.short) === String(short));
                     const codeObj = getMarkCodes().find(t => String(t.short).toUpperCase() === String(typeValue).toUpperCase());
                     const label = codeObj ? codeObj.full : (typeObj ? typeObj.full : short);
                     chips.push(`<span title="${hEsc(d.date+' · '+label+' — to‘liq ma’lumotni ko‘rish')}" onclick="event.stopPropagation();openStudentLessonModal('${jEsc(cls)}','${jEsc(subject.name)}','${jEsc(q)}','${jEsc(d.iso || '')}',${Number(d.instance)||0})" style="display:inline-block;margin:2px;padding:2px 5px;border-radius:3px;color:#fff;background:${gradeColorHex(typeValue)};font-weight:700;cursor:pointer;">${hEsc(typeValue)}</span>`);
                 });
             });
-            const avgValue = valid.length ? valid.reduce((a,b)=>a+b,0)/valid.length : null;
-            const avg = avgValue === null ? '—' : avgValue.toFixed(2);
+            // O'quvchi sahifasi jurnal bilan aynan bir xil umumiy hisoblagich
+            // va formatlagichdan foydalanadi.
+            const avgValue = calculateGradeAverage(valid);
+            const avg = formatGradeAverage(valid, '—');
             const avgFraction = avgValue === null ? null : avgValue - Math.floor(avgValue);
             // O'rtacha aynan .50 bo'lsa rang berilmaydi; .50 dan past/yuqori qiymat eng yaqin butun baho rangini oladi.
             const avgIsHalf = avgFraction !== null && Math.abs(avgFraction - 0.5) < 0.000001;
@@ -7242,7 +7401,7 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                         const q1 = (getMarks(quarters[0].id, cls, subject.name)[studentKey] || {}).__quarter || '';
                         const q2 = (getMarks(quarters[1].id, cls, subject.name)[studentKey] || {}).__quarter || '';
                         if (q1 !== '' && q2 !== '' && !isNaN(q1) && !isNaN(q2))
-                            halfYear = ((Number(q1) + Number(q2)) / 2).toFixed(1);
+                            halfYear = formatAverageNumber((Number(q1) + Number(q2)) / 2);
                     }
                     const yil = getMarksByKey(`marks_Annual_${cls}_${subject.name}`)[studentKey] || '';
                     h += `<td><input type="text" class="gi" style="${getGradeStyle(imt)};width:40px" value="${hEsc(imt)}" onchange="saveExtra('${jEsc(cls)}','${jEsc(subject.name)}','Imtihon',this.dataset.k,this.value)" data-k="${hEsc(studentKey)}"></td>`;
@@ -7398,9 +7557,9 @@ Davom etasizmi? Bu amalni ortga qaytarib bo‘lmaydi.`)) return;
                 subjects.forEach(s => {
                     const val = getMarks(filterQuarter, cls, s.name)[studentKey]?.['__quarter'] || '';
                     marks[s.name] = val;
-                    if (val && !isNaN(val)) { total += parseFloat(val); count++; }
+                    const numericGrade = parseGradeNumber(val); if (numericGrade !== null) { total += numericGrade; count++; }
                 });
-                const avg = count ? (total / count).toFixed(1) : '0.0';
+                const avg = count ? formatAverageNumber(total / count) : '0,0';
                 return { name, studentKey, marks, avg, total: count ? total : 0, count };
             });
 
